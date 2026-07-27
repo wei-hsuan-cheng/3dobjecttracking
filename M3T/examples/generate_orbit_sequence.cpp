@@ -47,8 +47,11 @@ void WriteOpenCvMatrix(std::ofstream &ofs, const std::string &key,
 
 // Body-to-world pose for frame i (camera sits at the world origin looking down
 // +z). Combines an in-image spin, a gentle nod, and a translation sweep so the
-// motion is large over the sequence but small between consecutive frames.
-m3t::Transform3fA PoseForFrame(int i, int n_frames) {
+// motion is large over the sequence but small between consecutive frames. All
+// translations are scaled by the base viewing distance so the motion is
+// proportional to the object regardless of its size.
+m3t::Transform3fA PoseForFrame(int i, int n_frames, float distance,
+                               const Eigen::Vector3f &center) {
   const float phase = 2.0f * float(M_PI) * float(i) / float(n_frames);
   const float spin = 1.5f * float(M_PI) / 180.0f * float(i);  // ~1.5 deg/frame
   const float nod = 25.0f * float(M_PI) / 180.0f * std::sin(phase);
@@ -57,12 +60,16 @@ m3t::Transform3fA PoseForFrame(int i, int n_frames) {
       (Eigen::AngleAxisf(nod, Eigen::Vector3f::UnitX()) *
        Eigen::AngleAxisf(spin, Eigen::Vector3f::UnitZ()))
           .toRotationMatrix();
-  Eigen::Vector3f t{0.05f * std::sin(phase), 0.03f * std::cos(phase),
-                    0.55f + 0.05f * std::sin(phase)};
+  // Where the object CENTER should appear (in front of the camera).
+  Eigen::Vector3f t_view{distance * 0.15f * std::sin(phase),
+                         distance * 0.10f * std::cos(phase),
+                         distance * (1.0f + 0.1f * std::sin(phase))};
 
   m3t::Transform3fA pose{m3t::Transform3fA::Identity()};
   pose.linear() = R;
-  pose.translation() = t;
+  // Offset so the mesh center (not its possibly off-origin frame) lands at
+  // t_view: origin = t_view - R * center.
+  pose.translation() = t_view - R * center;
   return pose;
 }
 
@@ -100,11 +107,25 @@ int main(int argc, char *argv[]) {
     return -1;
   }
 
+  // Compute the mesh's true axis-aligned bounding box (in the body frame) to
+  // auto-fit the viewing distance and to recenter possibly off-origin meshes.
+  Eigen::Vector3f lo = body_ptr->vertices().front();
+  Eigen::Vector3f hi = lo;
+  for (const auto &v : body_ptr->vertices()) {
+    lo = lo.cwiseMin(v);
+    hi = hi.cwiseMax(v);
+  }
+  const Eigen::Vector3f center = 0.5f * (lo + hi);
+  const float diagonal = (hi - lo).norm();
+  const float distance = intrinsics.fu * diagonal / (0.45f * intrinsics.height);
+  std::cout << "mesh bbox diagonal=" << diagonal << " m, viewing distance="
+            << distance << " m" << std::endl;
+
   std::ofstream poses_ofs{(out_directory / "poses_gt.txt").string()};
   m3t::Transform3fA pose0;
 
   for (int i = 0; i < n_frames; ++i) {
-    const m3t::Transform3fA pose = PoseForFrame(i, n_frames);
+    const m3t::Transform3fA pose = PoseForFrame(i, n_frames, distance, center);
     if (i == 0) pose0 = pose;
     body_ptr->set_body2world_pose(pose);
 

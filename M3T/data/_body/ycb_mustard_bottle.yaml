@@ -1,0 +1,20 @@
+%YAML:1.2
+# YCB object 006_mustard_bottle. The mesh is NOT committed (third-party); the
+# path below is resolved relative to this file, i.e. M3T/temp/ycb_mustard/...
+# Download it first (see m3t_instruction.md, "arbitrary mesh" pipeline):
+#   mkdir -p temp/ycb_mustard && cd temp/ycb_mustard
+#   curl -sL https://ycb-benchmarks.s3.amazonaws.com/data/google/006_mustard_bottle_google_16k.tgz | tar xz
+geometry_path: "../../temp/ycb_mustard/006_mustard_bottle/google_16k/textured.obj"
+geometry_unit_in_meter: 1.0
+geometry_counterclockwise: 1
+geometry_enable_culling: 0
+geometry2body_pose: !!opencv-matrix
+  rows: 4
+  cols: 4
+  dt: d
+  data: [ 1., 0, 0, 0,
+          0, 1., 0, 0,
+          0, 0, 1., 0,
+          0, 0, 0, 1. ]
+body_id: 210
+region_id: 210

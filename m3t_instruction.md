@@ -229,11 +229,14 @@ detector metafiles now come from the generated `temp/orbit` folder:
     ../../temp/orbit/static_detector.yaml ../../temp/orbit
 ```
 
-Verified: the tracked pose stays within ~1–2 mm of ground truth across the whole
-180-frame motion (±5 cm sweep, z 0.5→0.6 m, 270° spin). This is a *synthetic*
-sequence rendered from the model (object on black) — a controlled way to confirm
-tracking under large motion. For real-world data, download a benchmark such as
-RBOT or the DLR RTB (large, external) and point the loader at its frames.
+The generator **auto-fits** the viewing distance to the mesh's bounding box (so
+the object fills ~45% of the frame) and **recenters** off-origin meshes, so any
+object is framed correctly. The motion (spin + nod + translation sweep) scales
+with the object. This is a *synthetic* sequence rendered from the model (object
+on black) — a controlled way to confirm tracking under large motion.
+
+Verified: the triangle tracks to within a few mm of ground truth across the
+whole 180-frame motion.
 
 **Other shapes.** The generator works with any body metafile. Two more
 primitives ship in `data/_body/` — a **box** and a **cylinder** — so you can
@@ -258,6 +261,44 @@ tracker has a pose ambiguity about its axis and a weak depth constraint — a
 representative failure mode. Adding a `DepthModality` (depth camera) would
 constrain it. (Note: the headless printout labels the body `triangle` — that is
 just the fixed internal body name in the example, not the object being tracked.)
+
+### 4e. Any mesh — the full pipeline (e.g. a YCB object)
+
+Because the generator auto-fits distance and recenters, you can drop in **any
+triangulated wavefront `.obj`** (M3T loads it via tinyobjloader, so `v/vt/vn`
+textured meshes are fine — only the geometry is used). The pipeline is:
+
+1. **Get a mesh** (`.obj`, triangulated). Note its unit (m vs mm).
+2. **Write a body YAML** with `geometry_path` (relative to the YAML) and
+   `geometry_unit_in_meter` (`1.0` if the mesh is in metres, `0.001` if mm);
+   keep `geometry_enable_culling: 0`.
+3. **Generate** the sequence from that YAML.
+4. **Track** it with the headless or GUI auto example.
+
+**Worked example — YCB `006_mustard_bottle`.** The body YAML is committed
+(`data/_body/ycb_mustard_bottle.yaml`); the mesh is third-party, so download it
+into `temp/ycb_mustard/` (where the YAML points):
+
+```bash
+cd 3dobjecttracking/M3T
+mkdir -p temp/ycb_mustard && (cd temp/ycb_mustard && \
+  curl -sL https://ycb-benchmarks.s3.amazonaws.com/data/google/006_mustard_bottle_google_16k.tgz | tar xz)
+
+cd build/examples
+export DISPLAY=:0 XDG_RUNTIME_DIR=/tmp/runtime-root
+# generate (auto-detects the ~19 cm bottle size and frames it)
+./generate_orbit_sequence ../../data/_body/ycb_mustard_bottle.yaml ../../temp/orbit_mustard 180
+# watch it track
+./run_on_recorded_sequence_gui_auto ../../temp/orbit_mustard/color_camera.yaml \
+    ../../data/_body/ycb_mustard_bottle.yaml \
+    ../../temp/orbit_mustard/static_detector.yaml ../../temp/orbit_mustard
+```
+
+Verified: it follows the large motion (x sweeps ≈ +0.02 → −0.12 m); like the
+cylinder it drifts a few mm–cm in depth (roughly symmetric, region-only, single
+camera). To try other YCB objects, swap the object name in the download URL and
+in the YAML's `geometry_path` (browse them at
+`http://ycb-benchmarks.s3-website-us-east-1.amazonaws.com/`).
 
 ### Changing the initial pose (auto examples)
 
@@ -303,7 +344,8 @@ to but not exactly the true object pose — a small offset the tracker corrects.
 | `M3T/examples/run_on_recorded_sequence_headless.cpp` | New headless example (StaticDetector + pose-printing Publisher, looping, runs `n_frames` then exits) |
 | `M3T/examples/run_on_recorded_sequence_gui.cpp` | New GUI example (NormalColorViewer + ManualDetector, looping so the window stays open) |
 | `M3T/examples/run_on_recorded_sequence_gui_auto.cpp` | New GUI example (NormalColorViewer + StaticDetector, auto-track, optional `viz` debug windows) |
-| `M3T/examples/generate_orbit_sequence.cpp` | New tool: renders a long synthetic sequence with large motion + its metafiles |
+| `M3T/examples/generate_orbit_sequence.cpp` | New tool: renders a long synthetic large-motion sequence + metafiles; auto-fits distance and recenters, so any mesh works |
 | `M3T/data/_body/box.{obj,yaml}` | Box primitive (0.08×0.05×0.03 m) for the generator |
 | `M3T/data/_body/cylinder.{obj,yaml}` | Cylinder primitive (r=0.028, h=0.08 m) for the generator |
+| `M3T/data/_body/ycb_mustard_bottle.yaml` | Body YAML for the YCB `006_mustard_bottle` example (mesh downloaded, not committed) |
 | `M3T/examples/CMakeLists.txt` | Registers the new example targets |
