@@ -235,6 +235,30 @@ sequence rendered from the model (object on black) — a controlled way to confi
 tracking under large motion. For real-world data, download a benchmark such as
 RBOT or the DLR RTB (large, external) and point the loader at its frames.
 
+**Other shapes.** The generator works with any body metafile. Two more
+primitives ship in `data/_body/` — a **box** and a **cylinder** — so you can
+compare object types. Generate and track them the same way, just swapping the
+body:
+
+```bash
+# box (0.08 x 0.05 x 0.03 m)
+./generate_orbit_sequence ../../data/_body/box.yaml ../../temp/orbit_box 180
+./run_on_recorded_sequence_gui_auto ../../temp/orbit_box/color_camera.yaml \
+    ../../data/_body/box.yaml ../../temp/orbit_box/static_detector.yaml ../../temp/orbit_box
+
+# cylinder (r=0.028, h=0.08 m)
+./generate_orbit_sequence ../../data/_body/cylinder.yaml ../../temp/orbit_cyl 180
+./run_on_recorded_sequence_gui_auto ../../temp/orbit_cyl/color_camera.yaml \
+    ../../data/_body/cylinder.yaml ../../temp/orbit_cyl/static_detector.yaml ../../temp/orbit_cyl
+```
+
+The box tracks to ~1 mm like the triangle. The **cylinder drifts more** (a few mm
+up to ~1 cm): it is rotationally symmetric, so a single-camera region-only
+tracker has a pose ambiguity about its axis and a weak depth constraint — a
+representative failure mode. Adding a `DepthModality` (depth camera) would
+constrain it. (Note: the headless printout labels the body `triangle` — that is
+just the fixed internal body name in the example, not the object being tracked.)
+
 ### Changing the initial pose (auto examples)
 
 The auto examples get their initial pose from the **`StaticDetector` YAML**:
@@ -280,4 +304,6 @@ to but not exactly the true object pose — a small offset the tracker corrects.
 | `M3T/examples/run_on_recorded_sequence_gui.cpp` | New GUI example (NormalColorViewer + ManualDetector, looping so the window stays open) |
 | `M3T/examples/run_on_recorded_sequence_gui_auto.cpp` | New GUI example (NormalColorViewer + StaticDetector, auto-track, optional `viz` debug windows) |
 | `M3T/examples/generate_orbit_sequence.cpp` | New tool: renders a long synthetic sequence with large motion + its metafiles |
+| `M3T/data/_body/box.{obj,yaml}` | Box primitive (0.08×0.05×0.03 m) for the generator |
+| `M3T/data/_body/cylinder.{obj,yaml}` | Cylinder primitive (r=0.028, h=0.08 m) for the generator |
 | `M3T/examples/CMakeLists.txt` | Registers the new example targets |
