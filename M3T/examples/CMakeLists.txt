@@ -33,6 +33,12 @@ target_link_libraries(parameter_study_rtb_dataset PUBLIC m3t)
 add_executable(run_on_recorded_sequence run_on_recorded_sequence.cpp)
 target_link_libraries(run_on_recorded_sequence PUBLIC m3t)
 
+add_executable(run_on_recorded_sequence_headless run_on_recorded_sequence_headless.cpp)
+target_link_libraries(run_on_recorded_sequence_headless PUBLIC m3t)
+
+add_executable(run_on_recorded_sequence_gui run_on_recorded_sequence_gui.cpp)
+target_link_libraries(run_on_recorded_sequence_gui PUBLIC m3t)
+
 add_executable(run_generated_tracker run_generated_tracker.cpp)
 target_link_libraries(run_generated_tracker PUBLIC m3t)
 
