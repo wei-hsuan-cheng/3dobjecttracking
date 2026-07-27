@@ -300,17 +300,38 @@ camera). To try other YCB objects, swap the object name in the download URL and
 in the YAML's `geometry_path` (browse them at
 `http://ycb-benchmarks.s3-website-us-east-1.amazonaws.com/`).
 
-### Changing the initial pose (auto examples)
+### Changing / testing the initial pose (auto examples)
 
-The auto examples get their initial pose from the **`StaticDetector` YAML**:
-`data/_body/triangle_static_detector.yaml`, the `link2world_pose` 4×4 matrix
-(rotation 3×3 + translation in the last column, metres). Edit that matrix to
-move the starting guess. The tracker then **refines** this guess frame by frame
-(the examples call `set_start_tracking_after_detection(true)` so tracking begins
-right after detection). The shipped value is already an approximate pose, close
-to but not exactly the true object pose — a small offset the tracker corrects.
+The initial guess is the **`StaticDetector` YAML → `link2world_pose`** 4×4 matrix
+(rotation 3×3 + translation in the last column, metres). For the shipped triangle
+that is `data/_body/triangle_static_detector.yaml`; **for a generated sequence it
+is `temp/<seq>/static_detector.yaml`** (e.g. `temp/orbit_box/static_detector.yaml`).
+The tracker refines this guess frame by frame (the examples call
+`set_start_tracking_after_detection(true)`).
 
-> On the 2-frame looping clip, refinement with only a color `RegionModality` is
+**To test a different initial guess — the correct procedure:**
+
+1. Generate the sequence **once** (do not touch the body YAML).
+2. Edit `link2world_pose` in `temp/<seq>/static_detector.yaml` (or pass a copy as
+   the detector argument). Perturb the translation by a few mm/cm or the rotation
+   by a few degrees.
+3. Re-run **only the tracker** on the same images — **do NOT regenerate**. The
+   images are the true motion; you are only changing where the tracker starts.
+4. Compare the tracked pose with `temp/<seq>/poses_gt.txt`.
+
+Keep the perturbation **small**. A region tracker only recovers if the guessed
+silhouette *overlaps* the real object: a small offset (≈1 cm here) snaps back to
+truth on the first frame, but an offset of roughly half the object size leaves no
+overlap and the tracker locks onto a wrong local minimum and never recovers.
+
+> **Do NOT change the initial guess via the body YAML's `geometry2body_pose`.**
+> That is the geometry↔body transform — it *redefines the object model* and is
+> baked into the rendered images (the mesh is drawn at `body2world · geometry2body`).
+> Editing it desynchronises the images from the tracker's model, so tracking
+> breaks — and stays broken even after you set it back, until you **regenerate**
+> the sequence (so images, `static_detector.yaml`, and the model all agree again).
+>
+> On the tiny 2-frame clip, refinement with only a color `RegionModality` is
 > under-constrained in depth (z), so the estimate can drift. Real multi-frame
 > sequences (and adding a depth modality) constrain it properly. The manual
 > example (§4b) instead derives the initial pose from your 4 clicks, not a YAML.
