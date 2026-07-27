@@ -24,11 +24,14 @@
 #include <m3t/renderer_geometry.h>
 
 #include <Eigen/Geometry>
+#include <algorithm>
 #include <cmath>
 #include <fstream>
 #include <iomanip>
 #include <memory>
+#include <random>
 #include <sstream>
+#include <vector>
 
 namespace {
 
@@ -76,14 +79,22 @@ m3t::Transform3fA PoseForFrame(int i, int n_frames, float distance,
 }  // namespace
 
 int main(int argc, char *argv[]) {
-  if (argc < 3 || argc > 4) {
-    std::cerr << "Usage: provide body metafile, out directory, [n_frames]"
+  if (argc < 3 || argc > 6) {
+    std::cerr << "Usage: body metafile, out directory, [n_frames=180], "
+                 "[depth_noise=0], [distortion=0]\n"
+                 "  depth_noise: axial depth-noise sigma at 1 m, in metres "
+                 "(sigma scales with z^2). Try 0.002.\n"
+                 "  distortion: radial lens-distortion coefficient k1 applied to "
+                 "color+depth. Try 0.15."
               << std::endl;
     return -1;
   }
   const std::filesystem::path body_metafile_path{argv[1]};
   const std::filesystem::path out_directory{argv[2]};
-  const int n_frames{argc == 4 ? std::stoi(argv[3]) : 180};
+  const int n_frames{argc >= 4 ? std::stoi(argv[3]) : 180};
+  const float depth_noise{argc >= 5 ? std::stof(argv[4]) : 0.0f};
+  const float distortion{argc >= 6 ? std::stof(argv[5]) : 0.0f};
+  const float kDepthScale = 0.001f;  // depth PNG unit: millimetres
   std::filesystem::create_directories(out_directory);
 
   // Camera intrinsics (matches the shipped triangle sequence).
@@ -121,6 +132,35 @@ int main(int argc, char *argv[]) {
   std::cout << "mesh bbox diagonal=" << diagonal << " m, viewing distance="
             << distance << " m" << std::endl;
 
+  std::cout << "depth_noise=" << depth_noise << " (sigma at 1 m), distortion k1="
+            << distortion << std::endl;
+
+  // Lookup table: renderer depth-buffer value (ushort) -> metric depth [m].
+  std::vector<float> depth_lut(65536);
+  for (int v = 0; v < 65536; ++v)
+    depth_lut[v] = renderer_ptr->Depth(static_cast<ushort>(v));
+
+  // Radial-distortion remap: for each pixel of the (distorted) output, sample
+  // the ideal pinhole render at ideal ~= distorted * (1 - k1 * r^2). Applied to
+  // color and depth alike so they stay registered.
+  const int W = intrinsics.width, H = intrinsics.height;
+  cv::Mat map_x, map_y;
+  if (distortion != 0.0f) {
+    map_x.create(H, W, CV_32F);
+    map_y.create(H, W, CV_32F);
+    for (int y = 0; y < H; ++y)
+      for (int x = 0; x < W; ++x) {
+        const float xn = (x - intrinsics.ppu) / intrinsics.fu;
+        const float yn = (y - intrinsics.ppv) / intrinsics.fv;
+        const float s = 1.0f - distortion * (xn * xn + yn * yn);
+        map_x.at<float>(y, x) = xn * s * intrinsics.fu + intrinsics.ppu;
+        map_y.at<float>(y, x) = yn * s * intrinsics.fv + intrinsics.ppv;
+      }
+  }
+
+  std::mt19937 rng{12345};
+  std::normal_distribution<float> gauss{0.0f, 1.0f};
+
   std::ofstream poses_ofs{(out_directory / "poses_gt.txt").string()};
   m3t::Transform3fA pose0;
 
@@ -129,16 +169,43 @@ int main(int argc, char *argv[]) {
     if (i == 0) pose0 = pose;
     body_ptr->set_body2world_pose(pose);
 
-    if (!renderer_ptr->StartRendering() || !renderer_ptr->FetchNormalImage()) {
+    if (!renderer_ptr->StartRendering() || !renderer_ptr->FetchNormalImage() ||
+        !renderer_ptr->FetchDepthImage()) {
       std::cerr << "Rendering failed at frame " << i << std::endl;
       return -1;
     }
     cv::Mat bgr;
     cv::cvtColor(renderer_ptr->normal_image(), bgr, cv::COLOR_BGRA2BGR);
 
-    std::ostringstream name;
-    name << "frame" << std::setw(4) << std::setfill('0') << i << ".png";
-    cv::imwrite((out_directory / name.str()).string(), bgr);
+    // Build a metric depth image (millimetres, 0 = no measurement) with noise.
+    const cv::Mat &raw = renderer_ptr->depth_image();  // CV_16U buffer values
+    cv::Mat depth_mm(H, W, CV_16U, cv::Scalar(0));
+    for (int y = 0; y < H; ++y)
+      for (int x = 0; x < W; ++x) {
+        const cv::Vec3b c = bgr.at<cv::Vec3b>(y, x);
+        if (!(c[0] || c[1] || c[2])) continue;  // background stays 0
+        float z = depth_lut[raw.at<ushort>(y, x)];
+        if (depth_noise > 0.0f) z += depth_noise * z * z * gauss(rng);
+        const int mm = int(std::lround(z / kDepthScale));
+        depth_mm.at<ushort>(y, x) =
+            static_cast<ushort>(std::min(std::max(mm, 0), 65535));
+      }
+
+    if (distortion != 0.0f) {
+      cv::Mat bgr_d, depth_d;
+      cv::remap(bgr, bgr_d, map_x, map_y, cv::INTER_LINEAR,
+                cv::BORDER_CONSTANT, cv::Scalar(0, 0, 0));
+      cv::remap(depth_mm, depth_d, map_x, map_y, cv::INTER_NEAREST,
+                cv::BORDER_CONSTANT, cv::Scalar(0));
+      bgr = bgr_d;
+      depth_mm = depth_d;
+    }
+
+    std::ostringstream cname, dname;
+    cname << "frame" << std::setw(4) << std::setfill('0') << i << ".png";
+    dname << "depth" << std::setw(4) << std::setfill('0') << i << ".png";
+    cv::imwrite((out_directory / cname.str()).string(), bgr);
+    cv::imwrite((out_directory / dname.str()).string(), depth_mm);
 
     const Eigen::Vector3f t = pose.translation();
     poses_ofs << t.x() << " " << t.y() << " " << t.z() << "\n";
@@ -160,6 +227,28 @@ int main(int argc, char *argv[]) {
     WriteOpenCvMatrix(ofs, "camera2world_pose",
                       Eigen::Matrix4f::Identity(), "   ");
     ofs << "image_name_pre: \"frame\"\n";
+    ofs << "load_index: 0\n";
+    ofs << "n_leading_zeros: 4\n";
+    ofs << "image_name_post: \"\"\n";
+    ofs << "load_image_type: \"png\"\n";
+  }
+
+  // Write the LoaderDepthCamera metafile (registered with the color camera).
+  {
+    std::ofstream ofs{(out_directory / "depth_camera.yaml").string()};
+    ofs << "%YAML:1.2\n";
+    ofs << "load_directory: \"./\"\n";
+    ofs << "intrinsics:\n";
+    ofs << "   f_u: " << intrinsics.fu << "\n";
+    ofs << "   f_v: " << intrinsics.fv << "\n";
+    ofs << "   pp_x: " << intrinsics.ppu << "\n";
+    ofs << "   pp_y: " << intrinsics.ppv << "\n";
+    ofs << "   width: " << intrinsics.width << "\n";
+    ofs << "   height: " << intrinsics.height << "\n";
+    ofs << "depth_scale: " << kDepthScale << "\n";
+    WriteOpenCvMatrix(ofs, "camera2world_pose",
+                      Eigen::Matrix4f::Identity(), "   ");
+    ofs << "image_name_pre: \"depth\"\n";
     ofs << "load_index: 0\n";
     ofs << "n_leading_zeros: 4\n";
     ofs << "image_name_post: \"\"\n";

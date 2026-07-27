@@ -300,6 +300,50 @@ camera). To try other YCB objects, swap the object name in the download URL and
 in the YAML's `geometry_path` (browse them at
 `http://ycb-benchmarks.s3-website-us-east-1.amazonaws.com/`).
 
+### 4f. Multi-modality RGB-D (Region + Depth) — no camera needed
+
+The shipped multi-modality examples need a physical RGB-D camera
+(`run_on_camera_sequence`, pen-paper demo) or a dataset download (the
+evaluators). To get a **self-contained** multi-modality run, the generator also
+renders a **depth** image per frame and writes `depth_camera.yaml`, and
+`run_on_recorded_sequence_rgbd` tracks with **RegionModality (color) +
+DepthModality (depth)** together — all from disk.
+
+The generator takes two optional knobs to make the depth realistic, both tunable:
+
+```text
+generate_orbit_sequence <body> <out> [n_frames=180] [depth_noise=0] [distortion=0]
+  depth_noise : axial depth-noise sigma at 1 m, in metres; sigma scales with z^2.
+                e.g. 0.01 ~ 1 mm at 0.3 m. 0 = clean.
+  distortion  : radial lens-distortion coefficient k1, applied to color AND depth
+                (they stay registered). e.g. 0.15 = slight barrel. 0 = none.
+```
+
+```bash
+cd build/examples
+export DISPLAY=:0 XDG_RUNTIME_DIR=/tmp/runtime-root
+# generate an RGB-D cylinder sequence with depth noise + slight distortion
+./generate_orbit_sequence ../../data/_body/cylinder.yaml ../../temp/rgbd_cyl 180 0.002 0.15
+
+# track with Region + Depth
+./run_on_recorded_sequence_rgbd \
+    ../../temp/rgbd_cyl/color_camera.yaml ../../temp/rgbd_cyl/depth_camera.yaml \
+    ../../data/_body/cylinder.yaml ../../temp/rgbd_cyl/static_detector.yaml \
+    ../../temp/rgbd_cyl 180
+```
+
+The generator now always writes `depthNNNN.png` (16-bit millimetres, 0 = no
+measurement) and `depth_camera.yaml` alongside the color frames; with
+`depth_noise` / `distortion` left at 0 the color frames are identical to before,
+so the region-only examples are unaffected.
+
+**Depth helps.** On the noisy + distorted cylinder, at the hardest frame the
+region-only tracker drifts ~15 mm while **Region + Depth** stays ~1.5 mm — the
+depth modality constrains what a single color-region view leaves ambiguous
+(depth and the axis of symmetric objects). Compare yourself by running
+`run_on_recorded_sequence_headless` (region only) vs `run_on_recorded_sequence_rgbd`
+on the same generated sequence.
+
 ### Changing / testing the initial pose (auto examples)
 
 The initial guess is the **`StaticDetector` YAML → `link2world_pose`** 4×4 matrix
@@ -340,7 +384,8 @@ overlap and the tracker locks onto a wrong local minimum and never recovers.
 
 | Binary | Window? | Interaction | What to look at |
 |--------|---------|-------------|-----------------|
-| `run_on_recorded_sequence_headless` | no | none | pose printed per frame |
+| `run_on_recorded_sequence_headless` | no | none | pose printed per frame (region only) |
+| `run_on_recorded_sequence_rgbd` | no | none | pose per frame, **Region + Depth** (needs a depth sequence) |
 | `run_on_recorded_sequence_gui_auto` | yes | none (auto) | tracking overlay (add `viz` for internals) |
 | `run_on_recorded_sequence_gui` | yes | click 4 pts + keys | manual-detection workflow |
 
@@ -365,7 +410,9 @@ overlap and the tracker locks onto a wrong local minimum and never recovers.
 | `M3T/examples/run_on_recorded_sequence_headless.cpp` | New headless example (StaticDetector + pose-printing Publisher, looping, runs `n_frames` then exits) |
 | `M3T/examples/run_on_recorded_sequence_gui.cpp` | New GUI example (NormalColorViewer + ManualDetector, looping so the window stays open) |
 | `M3T/examples/run_on_recorded_sequence_gui_auto.cpp` | New GUI example (NormalColorViewer + StaticDetector, auto-track, optional `viz` debug windows) |
-| `M3T/examples/generate_orbit_sequence.cpp` | New tool: renders a long synthetic large-motion sequence + metafiles; auto-fits distance and recenters, so any mesh works |
+| `M3T/examples/generate_orbit_sequence.cpp` | New tool: renders a long synthetic large-motion **RGB-D** sequence + metafiles; auto-fits distance, recenters any mesh, writes depth PNGs + `depth_camera.yaml`, with configurable depth noise + lens distortion |
+| `M3T/examples/run_on_recorded_sequence_rgbd.cpp` | New multi-modality example: Region (color) + Depth modality, from disk, no physical camera |
+| `M3T/examples/looping_loader_camera.h` (depth) | Adds `LoopingLoaderDepthCamera` alongside the color one |
 | `M3T/data/_body/box.{obj,yaml}` | Box primitive (0.08×0.05×0.03 m) for the generator |
 | `M3T/data/_body/cylinder.{obj,yaml}` | Cylinder primitive (r=0.028, h=0.08 m) for the generator |
 | `M3T/data/_body/ycb_mustard_bottle.yaml` | Body YAML for the YCB `006_mustard_bottle` example (mesh downloaded, not committed) |
