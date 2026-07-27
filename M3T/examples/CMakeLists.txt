@@ -39,6 +39,9 @@ target_link_libraries(run_on_recorded_sequence_headless PUBLIC m3t)
 add_executable(run_on_recorded_sequence_gui run_on_recorded_sequence_gui.cpp)
 target_link_libraries(run_on_recorded_sequence_gui PUBLIC m3t)
 
+add_executable(run_on_recorded_sequence_gui_auto run_on_recorded_sequence_gui_auto.cpp)
+target_link_libraries(run_on_recorded_sequence_gui_auto PUBLIC m3t)
+
 add_executable(run_generated_tracker run_generated_tracker.cpp)
 target_link_libraries(run_generated_tracker PUBLIC m3t)
 

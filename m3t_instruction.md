@@ -168,6 +168,43 @@ you press `Q`. The `dbind-WARNING`, `canberra-gtk-module`, and `XDG_RUNTIME_DIR`
 messages are harmless. (Stock `run_on_recorded_sequence` is the non-looping
 original; on this 2-frame clip it would exit immediately.)
 
+### 4c. GUI mode, auto-track (viewer window, no clicking)
+
+`run_on_recorded_sequence_gui_auto` (added in this repo) is the easiest one to
+watch: it uses a `StaticDetector` (no clicking) and starts detecting + tracking
+automatically, so the `NormalColorViewer` overlay appears immediately. The clip
+loops until you press `Q` (`S`=stop, `D`=detect, `T`/`X`=track).
+
+```bash
+cd build/examples
+
+export DISPLAY=:0
+./run_on_recorded_sequence_gui_auto \
+    ../../data/_sequence/color_camera.yaml \
+    ../../data/_body/triangle.yaml \
+    ../../data/_body/triangle_static_detector.yaml \
+    ../../temp
+```
+
+Add a `viz` argument at the end to also open the region-modality **debug
+window(s)** — the correspondence lines and result points overlaid on the object:
+
+```bash
+./run_on_recorded_sequence_gui_auto \
+    ../../data/_sequence/color_camera.yaml \
+    ../../data/_body/triangle.yaml \
+    ../../data/_body/triangle_static_detector.yaml \
+    ../../temp viz
+```
+
+### Summary of runnable examples
+
+| Binary | Window? | Interaction | What to look at |
+|--------|---------|-------------|-----------------|
+| `run_on_recorded_sequence_headless` | no | none | pose printed per frame |
+| `run_on_recorded_sequence_gui_auto` | yes | none (auto) | tracking overlay (add `viz` for internals) |
+| `run_on_recorded_sequence_gui` | yes | click 4 pts + keys | manual-detection workflow |
+
 ---
 
 ## 5. Notes on generated files & git
@@ -188,4 +225,5 @@ original; on this 2-frame clip it would exit immediately.)
 | `M3T/examples/looping_loader_camera.h` | Helper: `LoaderColorCamera` that loops a short clip instead of stopping at its end |
 | `M3T/examples/run_on_recorded_sequence_headless.cpp` | New headless example (StaticDetector + pose-printing Publisher, looping, runs `n_frames` then exits) |
 | `M3T/examples/run_on_recorded_sequence_gui.cpp` | New GUI example (NormalColorViewer + ManualDetector, looping so the window stays open) |
-| `M3T/examples/CMakeLists.txt` | Registers the two new example targets |
+| `M3T/examples/run_on_recorded_sequence_gui_auto.cpp` | New GUI example (NormalColorViewer + StaticDetector, auto-track, optional `viz` debug windows) |
+| `M3T/examples/CMakeLists.txt` | Registers the new example targets |
