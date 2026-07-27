@@ -197,6 +197,21 @@ window(s)** — the correspondence lines and result points overlaid on the objec
     ../../temp viz
 ```
 
+### Changing the initial pose (auto examples)
+
+The auto examples get their initial pose from the **`StaticDetector` YAML**:
+`data/_body/triangle_static_detector.yaml`, the `link2world_pose` 4×4 matrix
+(rotation 3×3 + translation in the last column, metres). Edit that matrix to
+move the starting guess. The tracker then **refines** this guess frame by frame
+(the examples call `set_start_tracking_after_detection(true)` so tracking begins
+right after detection). The shipped value is already an approximate pose, close
+to but not exactly the true object pose — a small offset the tracker corrects.
+
+> On the 2-frame looping clip, refinement with only a color `RegionModality` is
+> under-constrained in depth (z), so the estimate can drift. Real multi-frame
+> sequences (and adding a depth modality) constrain it properly. The manual
+> example (§4b) instead derives the initial pose from your 4 clicks, not a YAML.
+
 ### Summary of runnable examples
 
 | Binary | Window? | Interaction | What to look at |

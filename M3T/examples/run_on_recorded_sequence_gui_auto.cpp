@@ -87,6 +87,10 @@ int main(int argc, char *argv[]) {
       "detector", detector_metafile_path, optimizer_ptr)};
   tracker_ptr->AddDetector(detector_ptr);
 
+  // After the static detector sets the initial pose, automatically start
+  // tracking so the modality refines it (off by default).
+  tracker_ptr->set_start_tracking_after_detection(true);
+
   if (!tracker_ptr->SetUp()) return -1;
   if (!tracker_ptr->RunTrackerProcess(true, false)) return -1;
   return 0;

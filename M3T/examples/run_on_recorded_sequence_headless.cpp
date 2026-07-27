@@ -111,6 +111,10 @@ int main(int argc, char *argv[]) {
   tracker_ptr->AddPublisher(std::make_shared<PosePrinter>(
       "pose_printer", body_ptr, tracker_ptr.get(), n_frames));
 
+  // After the static detector sets the initial pose, automatically start
+  // tracking so the modality refines it (off by default).
+  tracker_ptr->set_start_tracking_after_detection(true);
+
   // Set up and run. RunTrackerProcess(true, false) executes the detection on
   // the first frame, then tracks. The PosePrinter quits the process after
   // n_frames, so this returns cleanly.
