@@ -42,6 +42,9 @@ target_link_libraries(run_on_recorded_sequence_gui PUBLIC m3t)
 add_executable(run_on_recorded_sequence_gui_auto run_on_recorded_sequence_gui_auto.cpp)
 target_link_libraries(run_on_recorded_sequence_gui_auto PUBLIC m3t)
 
+add_executable(generate_orbit_sequence generate_orbit_sequence.cpp)
+target_link_libraries(generate_orbit_sequence PUBLIC m3t)
+
 add_executable(run_generated_tracker run_generated_tracker.cpp)
 target_link_libraries(run_generated_tracker PUBLIC m3t)
 

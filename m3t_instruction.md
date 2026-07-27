@@ -197,6 +197,44 @@ window(s)** — the correspondence lines and result points overlaid on the objec
     ../../temp viz
 ```
 
+### 4d. Long sequence with large motion (synthetic)
+
+The shipped `data/_sequence` is only 2 frames, so you can't really *see*
+tracking. `generate_orbit_sequence` (added in this repo) renders the body from a
+moving viewpoint into a long sequence with large motion (a spin + nod +
+translation sweep), and writes ready-to-use metafiles. This lets you watch the
+overlay follow the object over many frames, with exact ground truth.
+
+**Step 1 — generate the sequence** (writes `frameNNNN.png`, `color_camera.yaml`,
+`static_detector.yaml`, `poses_gt.txt` into the out dir; 180 frames by default):
+
+```bash
+cd build/examples
+export DISPLAY=:0 XDG_RUNTIME_DIR=/tmp/runtime-root
+./generate_orbit_sequence ../../data/_body/triangle.yaml ../../temp/orbit 180
+```
+
+**Step 2 — track it** (headless to print, or GUI to watch). Note the camera and
+detector metafiles now come from the generated `temp/orbit` folder:
+
+```bash
+# headless (prints tracked pose per frame; compare with temp/orbit/poses_gt.txt)
+./run_on_recorded_sequence_headless \
+    ../../temp/orbit/color_camera.yaml ../../data/_body/triangle.yaml \
+    ../../temp/orbit/static_detector.yaml ../../temp/orbit 180
+
+# GUI (watch the overlay track the moving triangle; press Q to quit)
+./run_on_recorded_sequence_gui_auto \
+    ../../temp/orbit/color_camera.yaml ../../data/_body/triangle.yaml \
+    ../../temp/orbit/static_detector.yaml ../../temp/orbit
+```
+
+Verified: the tracked pose stays within ~1–2 mm of ground truth across the whole
+180-frame motion (±5 cm sweep, z 0.5→0.6 m, 270° spin). This is a *synthetic*
+sequence rendered from the model (object on black) — a controlled way to confirm
+tracking under large motion. For real-world data, download a benchmark such as
+RBOT or the DLR RTB (large, external) and point the loader at its frames.
+
 ### Changing the initial pose (auto examples)
 
 The auto examples get their initial pose from the **`StaticDetector` YAML**:
@@ -241,4 +279,5 @@ to but not exactly the true object pose — a small offset the tracker corrects.
 | `M3T/examples/run_on_recorded_sequence_headless.cpp` | New headless example (StaticDetector + pose-printing Publisher, looping, runs `n_frames` then exits) |
 | `M3T/examples/run_on_recorded_sequence_gui.cpp` | New GUI example (NormalColorViewer + ManualDetector, looping so the window stays open) |
 | `M3T/examples/run_on_recorded_sequence_gui_auto.cpp` | New GUI example (NormalColorViewer + StaticDetector, auto-track, optional `viz` debug windows) |
+| `M3T/examples/generate_orbit_sequence.cpp` | New tool: renders a long synthetic sequence with large motion + its metafiles |
 | `M3T/examples/CMakeLists.txt` | Registers the new example targets |
