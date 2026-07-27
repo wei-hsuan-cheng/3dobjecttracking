@@ -344,6 +344,18 @@ depth modality constrains what a single color-region view leaves ambiguous
 `run_on_recorded_sequence_headless` (region only) vs `run_on_recorded_sequence_rgbd`
 on the same generated sequence.
 
+**Verified on all four bodies** (180-frame RGB-D sequences, `depth_noise=0.002`,
+`distortion=0.15`, Region + Depth): every one tracked the full sequence without
+losing lock. Mean translation error stays low; the ~15 mm peaks come from the
+uncorrected lens distortion (the pinhole tracker cannot compensate `k1`):
+
+| Body | mean err | max err |
+|------|----------|---------|
+| triangle | 1.6 mm | 14.9 mm |
+| box | 2.5 mm | 15.5 mm |
+| cylinder | 3.1 mm | 15.0 mm |
+| mustard (YCB) | 6.4 mm | 18.6 mm |
+
 ### Changing / testing the initial pose (auto examples)
 
 The initial guess is the **`StaticDetector` YAML → `link2world_pose`** 4×4 matrix
