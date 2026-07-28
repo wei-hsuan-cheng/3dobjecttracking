@@ -11,5 +11,6 @@ doc/html
 !/doc/
 !.gitignore
 !CMakeLists.txt
+!package.xml
 !readme.md
 !.clang-format

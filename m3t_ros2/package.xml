@@ -1,0 +1,24 @@
+<?xml version="1.0"?>
+<package format="3">
+  <name>m3t_ros2</name>
+  <version>0.1.0</version>
+  <description>ROS 2 wrapper for the M3T 3D object tracker (single in-process node).</description>
+  <maintainer email="noreply@example.com">m3t_ros2</maintainer>
+  <license>MIT</license>
+
+  <buildtool_depend>ament_cmake</buildtool_depend>
+
+  <depend>m3t</depend>
+  <depend>rclcpp</depend>
+  <depend>sensor_msgs</depend>
+  <depend>geometry_msgs</depend>
+  <depend>tf2_ros</depend>
+  <depend>tf2_eigen</depend>
+  <depend>visualization_msgs</depend>
+  <depend>cv_bridge</depend>
+  <depend>image_transport</depend>
+
+  <export>
+    <build_type>ament_cmake</build_type>
+  </export>
+</package>

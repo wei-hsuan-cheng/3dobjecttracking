@@ -7,9 +7,12 @@ project(M3T)
 
 # Options
 # =============================================================================
-option(USE_AZURE_KINECT "Use Azure Kinect" ON)
-option(USE_REALSENSE "Use RealSense D435" ON)
-option(USE_GTEST "Use gtest" ON)
+# Defaults OFF so `colcon build` works out of the box on machines without the
+# Azure Kinect / RealSense SDKs or gtest. Enable explicitly if available.
+option(USE_AZURE_KINECT "Use Azure Kinect" OFF)
+option(USE_REALSENSE "Use RealSense D435" OFF)
+option(USE_GTEST "Use gtest" OFF)
+option(M3T_BUILD_EXAMPLES "Build M3T example executables" ON)
 
 
 # Libraries
@@ -136,6 +139,10 @@ endif ()
 # Directories
 # =============================================================================
 add_subdirectory(src)
-add_subdirectory(test)
-add_subdirectory(examples)
+if (USE_GTEST)
+    add_subdirectory(test)
+endif ()
+if (M3T_BUILD_EXAMPLES)
+    add_subdirectory(examples)
+endif ()
 add_subdirectory(doc)

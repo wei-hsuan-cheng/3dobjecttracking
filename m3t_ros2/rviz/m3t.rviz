@@ -1,0 +1,63 @@
+Panels:
+  - Class: rviz_common/Displays
+    Name: Displays
+Visualization Manager:
+  Global Options:
+    Fixed Frame: camera
+    Frame Rate: 30
+  Displays:
+    - Class: rviz_default_plugins/Grid
+      Enabled: true
+      Name: Grid
+    - Class: rviz_default_plugins/TF
+      Enabled: true
+      Name: TF
+      Show Names: true
+    - Class: rviz_default_plugins/Marker
+      Enabled: true
+      Name: MarkerEstimate
+      Topic:
+        Value: /m3t_tracker_node/marker_est
+        Depth: 5
+        Reliability Policy: Reliable
+    - Class: rviz_default_plugins/Marker
+      Enabled: true
+      Name: MarkerGroundTruth
+      Topic:
+        Value: /m3t_tracker_node/marker_gt
+        Depth: 5
+        Reliability Policy: Reliable
+    - Class: rviz_default_plugins/Image
+      Enabled: true
+      Name: Overlay
+      Topic:
+        Value: /m3t_tracker_node/overlay/image
+        Reliability Policy: Best Effort
+    - Class: rviz_default_plugins/Image
+      Enabled: true
+      Name: Color
+      Topic:
+        Value: /m3t_tracker_node/color/image_raw
+        Reliability Policy: Best Effort
+    - Class: rviz_default_plugins/Image
+      Enabled: true
+      Name: Keypoints
+      Topic:
+        Value: /m3t_tracker_node/keypoints/image
+        Reliability Policy: Best Effort
+    - Class: rviz_default_plugins/Image
+      Enabled: true
+      Name: Depth
+      Topic:
+        Value: /m3t_tracker_node/depth/image_raw
+        Reliability Policy: Best Effort
+  Tools:
+    - Class: rviz_default_plugins/MoveCamera
+  Views:
+    Current:
+      Class: rviz_default_plugins/Orbit
+      Distance: 1.0
+      Focal Point:
+        X: 0
+        Y: 0
+        Z: 0.4

@@ -162,6 +162,9 @@ int main(int argc, char *argv[]) {
   std::normal_distribution<float> gauss{0.0f, 1.0f};
 
   std::ofstream poses_ofs{(out_directory / "poses_gt.txt").string()};
+  // Full 4x4 body2world per frame (row-major, 16 values/line) for consumers
+  // that need orientation too (e.g. the ROS node's GT marker/TF).
+  std::ofstream poses_mat_ofs{(out_directory / "poses_gt_matrix.txt").string()};
   m3t::Transform3fA pose0;
 
   for (int i = 0; i < n_frames; ++i) {
@@ -209,8 +212,13 @@ int main(int argc, char *argv[]) {
 
     const Eigen::Vector3f t = pose.translation();
     poses_ofs << t.x() << " " << t.y() << " " << t.z() << "\n";
+    const Eigen::Matrix4f m = pose.matrix();
+    for (int r = 0; r < 4; ++r)
+      for (int c = 0; c < 4; ++c)
+        poses_mat_ofs << m(r, c) << (r == 3 && c == 3 ? '\n' : ' ');
   }
   poses_ofs.close();
+  poses_mat_ofs.close();
 
   // Write the LoaderColorCamera metafile.
   {
