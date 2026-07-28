@@ -1,63 +1,184 @@
 Panels:
   - Class: rviz_common/Displays
+    Help Height: 70
     Name: Displays
+    Property Tree Widget:
+      Expanded: ~
+      Splitter Ratio: 0.5
+    Tree Height: 196
 Visualization Manager:
-  Global Options:
-    Fixed Frame: camera
-    Frame Rate: 30
+  Class: ""
   Displays:
-    - Class: rviz_default_plugins/Grid
+    - Alpha: 0.5
+      Cell Size: 1
+      Class: rviz_default_plugins/Grid
+      Color: 160; 160; 164
       Enabled: true
+      Line Style:
+        Line Width: 0.029999999329447746
+        Value: Lines
       Name: Grid
+      Normal Cell Count: 0
+      Offset:
+        X: 0
+        Y: 0
+        Z: 0
+      Plane: XY
+      Plane Cell Count: 10
+      Reference Frame: <Fixed Frame>
+      Value: true
     - Class: rviz_default_plugins/TF
       Enabled: true
+      Frame Timeout: 15
+      Frames:
+        All Enabled: true
+        camera:
+          Value: true
+        object_est:
+          Value: true
+      Marker Scale: 1
       Name: TF
+      Show Arrows: true
+      Show Axes: true
       Show Names: true
+      Tree:
+        camera:
+          object_est:
+            {}
+      Update Interval: 0
+      Value: true
     - Class: rviz_default_plugins/Marker
       Enabled: true
       Name: MarkerEstimate
+      Namespaces:
+        est: true
       Topic:
-        Value: /m3t_tracker_node/marker_est
         Depth: 5
+        Durability Policy: Volatile
+        Filter size: 10
+        History Policy: Keep Last
         Reliability Policy: Reliable
+        Value: /m3t_tracker_node/marker_est
+      Value: true
     - Class: rviz_default_plugins/Marker
       Enabled: true
       Name: MarkerGroundTruth
+      Namespaces:
+        {}
       Topic:
-        Value: /m3t_tracker_node/marker_gt
         Depth: 5
+        Durability Policy: Volatile
+        Filter size: 10
+        History Policy: Keep Last
         Reliability Policy: Reliable
+        Value: /m3t_tracker_node/marker_gt
+      Value: true
     - Class: rviz_default_plugins/Image
       Enabled: true
+      Max Value: 1
+      Median window: 5
+      Min Value: 0
       Name: Overlay
+      Normalize Range: true
       Topic:
+        Depth: 5
+        Durability Policy: Volatile
+        History Policy: Keep Last
+        Reliability Policy: Best Effort
         Value: /m3t_tracker_node/overlay/image
-        Reliability Policy: Best Effort
+      Value: true
     - Class: rviz_default_plugins/Image
-      Enabled: true
+      Enabled: false
+      Max Value: 1
+      Median window: 5
+      Min Value: 0
       Name: Color
+      Normalize Range: true
       Topic:
+        Depth: 5
+        Durability Policy: Volatile
+        History Policy: Keep Last
+        Reliability Policy: Best Effort
         Value: /m3t_tracker_node/color/image_raw
-        Reliability Policy: Best Effort
+      Value: false
     - Class: rviz_default_plugins/Image
-      Enabled: true
+      Enabled: false
+      Max Value: 1
+      Median window: 5
+      Min Value: 0
       Name: Keypoints
+      Normalize Range: true
       Topic:
+        Depth: 5
+        Durability Policy: Volatile
+        History Policy: Keep Last
+        Reliability Policy: Best Effort
         Value: /m3t_tracker_node/keypoints/image
-        Reliability Policy: Best Effort
+      Value: false
     - Class: rviz_default_plugins/Image
-      Enabled: true
+      Enabled: false
+      Max Value: 1
+      Median window: 5
+      Min Value: 0
       Name: Depth
+      Normalize Range: true
       Topic:
-        Value: /m3t_tracker_node/depth/image_raw
+        Depth: 5
+        Durability Policy: Volatile
+        History Policy: Keep Last
         Reliability Policy: Best Effort
+        Value: /m3t_tracker_node/depth/image_raw
+      Value: false
+  Enabled: true
+  Global Options:
+    Background Color: 48; 48; 48
+    Fixed Frame: camera
+    Frame Rate: 30
+  Name: root
   Tools:
     - Class: rviz_default_plugins/MoveCamera
+  Transformation:
+    Current:
+      Class: rviz_default_plugins/TF
+  Value: true
   Views:
     Current:
       Class: rviz_default_plugins/Orbit
-      Distance: 1.0
+      Distance: 1.8831878900527954
+      Enable Stereo Rendering:
+        Stereo Eye Separation: 0.05999999865889549
+        Stereo Focal Distance: 1
+        Swap Stereo Eyes: false
+        Value: false
       Focal Point:
-        X: 0
-        Y: 0
-        Z: 0.4
+        X: 0.0729970633983612
+        Y: 0.1228170171380043
+        Z: 0.3754410147666931
+      Focal Shape Fixed Size: true
+      Focal Shape Size: 0.05000000074505806
+      Invert Z Axis: false
+      Name: Current View
+      Near Clip Distance: 0.009999999776482582
+      Pitch: 0.12020258605480194
+      Target Frame: <Fixed Frame>
+      Value: Orbit (rviz_default_plugins)
+      Yaw: 5.350393772125244
+    Saved: ~
+Window Geometry:
+  Color:
+    collapsed: false
+  Depth:
+    collapsed: false
+  Displays:
+    collapsed: false
+  Height: 880
+  Hide Left Dock: false
+  Hide Right Dock: false
+  Keypoints:
+    collapsed: false
+  Overlay:
+    collapsed: false
+  QMainWindow State: 000000ff00000000fd0000000100000000000002090000031afc0200000005fb0000000a00440065007000740068000000003b000001740000002800fffffffb00000012004b006500790070006f0069006e0074007300000000a8000000b40000002800fffffffb0000000a0043006f006c006f007200000000f9000000590000002800fffffffb000000100044006900730070006c006100790073010000003b00000145000000c700fffffffb0000000e004f007600650072006c006100790100000186000001cf0000002800ffffff000003970000031a00000004000000040000000800000008fc0000000100000002000000010000000a0054006f006f006c00730100000000ffffffff0000000000000000
+  Width: 1446
+  X: 66
+  Y: 32
