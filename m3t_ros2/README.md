@@ -57,7 +57,7 @@ colcon build --symlink-install \
 ## Generate a sequence (once, for node 1)
 
 ```bash
-cd ~/ocs2_ros2_ws/src/3dobjecttracking/M3T/build/examples
+cd <workspace_dir>/src/3dobjecttracking/M3T/build/examples
 export DISPLAY=:0 XDG_RUNTIME_DIR=/tmp/runtime-root
 ./generate_orbit_sequence ../../data/_body/cylinder.yaml ../../temp/rgbd_cylinder 180 0.002 0.15
 # writes color/depth PNGs, *_camera.yaml, static_detector.yaml, poses_gt_matrix.txt
