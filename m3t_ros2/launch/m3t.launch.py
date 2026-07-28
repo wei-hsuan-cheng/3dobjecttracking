@@ -29,7 +29,9 @@ def launch_setup(context, *args, **kwargs):
     m3t = LaunchConfiguration("m3t_root").perform(context)
     obj = LaunchConfiguration("object").perform(context)
     modalities = LaunchConfiguration("modalities").perform(context)
-    fps = int(LaunchConfiguration("fps").perform(context))
+    track_rate = float(LaunchConfiguration("track_rate").perform(context))
+    publish_rate = float(LaunchConfiguration("publish_rate").perform(context))
+    log_period = float(LaunchConfiguration("log_period").perform(context))
     seq = LaunchConfiguration("sequence_dir").perform(context) or \
         os.path.join(m3t, "temp", "rgbd_" + obj)
 
@@ -47,8 +49,9 @@ def launch_setup(context, *args, **kwargs):
             "mesh_resource": mesh_resource,
             "mesh_scale": 1.0,
             "mesh_use_embedded_materials": embedded,
-            "fps": fps,
-            "loop": True,
+            "track_rate": track_rate,
+            "publish_rate": publish_rate,
+            "log_period": log_period,
             "world_frame": "camera",
             "publish_gt": True,
             "publish_keypoints": True,
@@ -75,7 +78,10 @@ def generate_launch_description():
         DeclareLaunchArgument("object", default_value="cylinder"),
         DeclareLaunchArgument("modalities", default_value="region,depth"),
         DeclareLaunchArgument("sequence_dir", default_value=""),
-        DeclareLaunchArgument("fps", default_value="20"),
+        DeclareLaunchArgument("track_rate", default_value="0.0",
+                              description="solve loop Hz; 0 = as fast as possible"),
+        DeclareLaunchArgument("publish_rate", default_value="30.0"),
+        DeclareLaunchArgument("log_period", default_value="2.0"),
         DeclareLaunchArgument("rviz", default_value="false"),
         OpaqueFunction(function=launch_setup),
     ])
