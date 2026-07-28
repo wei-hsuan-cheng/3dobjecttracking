@@ -13,8 +13,10 @@ find_package(ament_cmake REQUIRED)
 find_package(rclcpp REQUIRED)
 find_package(sensor_msgs REQUIRED)
 find_package(geometry_msgs REQUIRED)
+find_package(tf2 REQUIRED)
 find_package(tf2_ros REQUIRED)
 find_package(tf2_eigen REQUIRED)
+find_package(std_srvs REQUIRED)
 find_package(visualization_msgs REQUIRED)
 find_package(cv_bridge REQUIRED)
 find_package(image_transport REQUIRED)
@@ -30,7 +32,7 @@ find_package(OpenMP REQUIRED)
 find_package(M3T REQUIRED)
 
 set(ROS_DEPS
-  rclcpp sensor_msgs geometry_msgs tf2_ros tf2_eigen
+  rclcpp sensor_msgs geometry_msgs tf2 tf2_ros tf2_eigen std_srvs
   visualization_msgs cv_bridge image_transport)
 
 add_executable(m3t_tracker_node src/tracker_node.cpp)
@@ -38,7 +40,13 @@ target_include_directories(m3t_tracker_node PRIVATE include)
 ament_target_dependencies(m3t_tracker_node ${ROS_DEPS})
 target_link_libraries(m3t_tracker_node m3t)
 
-install(TARGETS m3t_tracker_node DESTINATION lib/${PROJECT_NAME})
+add_executable(m3t_image_publisher_node src/image_publisher_node.cpp)
+target_include_directories(m3t_image_publisher_node PRIVATE include)
+ament_target_dependencies(m3t_image_publisher_node ${ROS_DEPS})
+target_link_libraries(m3t_image_publisher_node m3t)
+
+install(TARGETS m3t_tracker_node m3t_image_publisher_node
+        DESTINATION lib/${PROJECT_NAME})
 install(DIRECTORY launch rviz DESTINATION share/${PROJECT_NAME})
 
 ament_package()

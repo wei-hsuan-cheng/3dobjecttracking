@@ -31,6 +31,9 @@ struct RosPublisherConfig {
   std::string mesh_resource;
   float mesh_scale{1.0f};
   bool mesh_use_embedded_materials{false};
+  bool publish_color{true};
+  bool publish_depth{true};
+  bool publish_gt{true};
   bool publish_keypoints{true};
 };
 
@@ -66,9 +69,9 @@ class RosPublisher {
     h.stamp = stamp;
     h.frame_id = cfg_.world_frame;
 
-    if (!s.color.empty())
+    if (cfg_.publish_color && !s.color.empty())
       pub_color_->publish(*cv_bridge::CvImage(h, "bgr8", s.color).toImageMsg());
-    if (s.has_depth && !s.depth.empty())
+    if (cfg_.publish_depth && s.has_depth && !s.depth.empty())
       pub_depth_->publish(*cv_bridge::CvImage(h, "16UC1", s.depth).toImageMsg());
     if (!s.overlay.empty())
       pub_overlay_->publish(*cv_bridge::CvImage(h, "bgr8", s.overlay).toImageMsg());
@@ -82,7 +85,7 @@ class RosPublisher {
 
     BroadcastTf(stamp, "object_est", s.body2world_est);
     PublishMarker(pub_marker_est_, stamp, "est", s.geometry2world_est, 1.0f, 0.1f, 0.1f, 0.9f);
-    if (s.has_gt) {
+    if (cfg_.publish_gt && s.has_gt) {
       BroadcastTf(stamp, "object_gt", s.body2world_gt);
       PublishMarker(pub_marker_gt_, stamp, "gt", s.geometry2world_gt, 0.1f, 0.9f, 0.1f, 0.5f);
     }
