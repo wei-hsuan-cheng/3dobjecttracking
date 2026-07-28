@@ -127,10 +127,12 @@ int main(int argc, char **argv) {
   const bool use_texture = HasModality(modalities, "texture");
 
   auto color_camera = std::make_shared<m3t_ros2::RosColorCamera>("color_camera");
+  color_camera->SetUp();  // overlay renderer uses it even when no modality does
   std::shared_ptr<m3t_ros2::RosDepthCamera> depth_camera;
   if (use_depth) {
     depth_camera = std::make_shared<m3t_ros2::RosDepthCamera>("depth_camera");
     depth_camera->SetDepthScale(depth_scale);
+    depth_camera->SetUp();
   }
 
   auto qos = rclcpp::SensorDataQoS();
