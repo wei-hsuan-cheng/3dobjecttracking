@@ -356,6 +356,36 @@ uncorrected lens distortion (the pinhole tracker cannot compensate `k1`):
 | cylinder | 3.1 mm | 15.0 mm |
 | mustard (YCB) | 6.4 mm | 18.6 mm |
 
+**Watch it live (GUI).** `run_on_recorded_sequence_gui_rgbd` runs the same
+Region + Depth tracker but with a `NormalColorViewer`, so you see the model
+overlaid on the color frames while depth refines the pose (needs a display):
+
+```bash
+export DISPLAY=:0
+./run_on_recorded_sequence_gui_rgbd \
+    ../../temp/rgbd_cyl/color_camera.yaml ../../temp/rgbd_cyl/depth_camera.yaml \
+    ../../data/_body/cylinder.yaml ../../temp/rgbd_cyl/static_detector.yaml \
+    ../../temp/rgbd_cyl
+```
+
+**The third modality — texture.** `run_on_recorded_sequence_texture` tracks with
+Region + **TextureModality** (image keypoints validated against a
+`FocusedSilhouetteRenderer`). It uses the color sequence only:
+
+```bash
+./run_on_recorded_sequence_texture \
+    ../../temp/rgbd_box/color_camera.yaml ../../data/_body/box.yaml \
+    ../../temp/rgbd_box/static_detector.yaml ../../temp/rgbd_box 180
+```
+
+> TextureModality needs trackable image features **on the object surface**. On
+> the synthetic normal-rendered frames it finds tens of keypoints at the shading
+> edges — enough to run and track — but it shines on **real textured objects**
+> (or a textured render), where hundreds of stable surface features are
+> available. M3T's own renderer only produces geometry (normals/depth/
+> silhouette), not a textured RGB image, so for a strong texture demo use a real
+> dataset or an externally textured render.
+
 ### Changing / testing the initial pose (auto examples)
 
 The initial guess is the **`StaticDetector` YAML → `link2world_pose`** 4×4 matrix
@@ -398,7 +428,9 @@ overlap and the tracker locks onto a wrong local minimum and never recovers.
 |--------|---------|-------------|-----------------|
 | `run_on_recorded_sequence_headless` | no | none | pose printed per frame (region only) |
 | `run_on_recorded_sequence_rgbd` | no | none | pose per frame, **Region + Depth** (needs a depth sequence) |
+| `run_on_recorded_sequence_texture` | no | none | pose per frame, **Region + Texture** |
 | `run_on_recorded_sequence_gui_auto` | yes | none (auto) | tracking overlay (add `viz` for internals) |
+| `run_on_recorded_sequence_gui_rgbd` | yes | none (auto) | **Region + Depth** live overlay |
 | `run_on_recorded_sequence_gui` | yes | click 4 pts + keys | manual-detection workflow |
 
 ---
@@ -424,6 +456,8 @@ overlap and the tracker locks onto a wrong local minimum and never recovers.
 | `M3T/examples/run_on_recorded_sequence_gui_auto.cpp` | New GUI example (NormalColorViewer + StaticDetector, auto-track, optional `viz` debug windows) |
 | `M3T/examples/generate_orbit_sequence.cpp` | New tool: renders a long synthetic large-motion **RGB-D** sequence + metafiles; auto-fits distance, recenters any mesh, writes depth PNGs + `depth_camera.yaml`, with configurable depth noise + lens distortion |
 | `M3T/examples/run_on_recorded_sequence_rgbd.cpp` | New multi-modality example: Region (color) + Depth modality, from disk, no physical camera |
+| `M3T/examples/run_on_recorded_sequence_gui_rgbd.cpp` | New: Region + Depth with a live `NormalColorViewer` overlay |
+| `M3T/examples/run_on_recorded_sequence_texture.cpp` | New: Region + Texture modality (the third modality) |
 | `M3T/examples/looping_loader_camera.h` (depth) | Adds `LoopingLoaderDepthCamera` alongside the color one |
 | `M3T/data/_body/box.{obj,yaml}` | Box primitive (0.08×0.05×0.03 m) for the generator |
 | `M3T/data/_body/cylinder.{obj,yaml}` | Cylinder primitive (r=0.028, h=0.08 m) for the generator |

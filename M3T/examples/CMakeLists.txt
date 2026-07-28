@@ -48,6 +48,12 @@ target_link_libraries(generate_orbit_sequence PUBLIC m3t)
 add_executable(run_on_recorded_sequence_rgbd run_on_recorded_sequence_rgbd.cpp)
 target_link_libraries(run_on_recorded_sequence_rgbd PUBLIC m3t)
 
+add_executable(run_on_recorded_sequence_gui_rgbd run_on_recorded_sequence_gui_rgbd.cpp)
+target_link_libraries(run_on_recorded_sequence_gui_rgbd PUBLIC m3t)
+
+add_executable(run_on_recorded_sequence_texture run_on_recorded_sequence_texture.cpp)
+target_link_libraries(run_on_recorded_sequence_texture PUBLIC m3t)
+
 add_executable(run_generated_tracker run_generated_tracker.cpp)
 target_link_libraries(run_generated_tracker PUBLIC m3t)
 
