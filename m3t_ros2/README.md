@@ -29,8 +29,7 @@ colcon build --symlink-install \
 
 ## Generate a sequence (once)
 
-The node consumes a folder produced by M3T's `generate_orbit_sequence` (see
-[../m3t_instruction.md](../m3t_instruction.md) §4d–4f):
+The node consumes a folder produced by M3T's `generate_orbit_sequence` (see [../m3t_instruction.md](../m3t_instruction.md) §4d–4f):
 
 ```bash
 cd <workspace_dir>/src/3dobjecttracking/M3T/build/examples
@@ -54,8 +53,7 @@ ros2 launch m3t_ros2 m3t.launch.py \
   rviz:=true
 ```
 
-Launch / node args: `object` (triangle|box|cylinder|mustard), `modalities`
-(comma list of region,depth,texture), `sequence_dir`, `m3t_root`, `rviz`, and:
+Launch / node args: `object` (triangle|box|cylinder|mustard), `modalities` (comma list of region,depth,texture), `sequence_dir`, `m3t_root`, `rviz`, and:
 
 | Param | Default | Meaning |
 |-------|---------|---------|
