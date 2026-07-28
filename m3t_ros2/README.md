@@ -15,16 +15,16 @@ A single in-process node runs the tracker on a recorded **RGB-D** sequence read 
 
 ```bash
 cd <workspace_dir>
-  NUM_JOBS=2 && \
-  export CMAKE_BUILD_PARALLEL_LEVEL=${NUM_JOBS} && \
-  export MAKEFLAGS=-j${NUM_JOBS} && \
-  export NINJAFLAGS=-j${NUM_JOBS} && \
-  colcon build --symlink-install \
-    --packages-up-to m3t_ros2 \
-    --executor sequential --parallel-workers ${NUM_JOBS} \
-    --cmake-force-configure \
-    --cmake-args -DBUILD_TESTING=OFF -DCMAKE_BUILD_TYPE=Release && \
-    . install/setup.bash
+NUM_JOBS=2 && \
+export CMAKE_BUILD_PARALLEL_LEVEL=${NUM_JOBS} && \
+export MAKEFLAGS=-j${NUM_JOBS} && \
+export NINJAFLAGS=-j${NUM_JOBS} && \
+colcon build --symlink-install \
+  --packages-up-to m3t_ros2 \
+  --executor sequential --parallel-workers ${NUM_JOBS} \
+  --cmake-force-configure \
+  --cmake-args -DBUILD_TESTING=OFF -DCMAKE_BUILD_TYPE=Release && \
+  . install/setup.bash
 ```
 
 ## Generate a sequence (once)
