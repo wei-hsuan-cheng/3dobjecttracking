@@ -1,40 +1,81 @@
 # m3t_ros2
 
-A ROS 2 (Humble) wrapper around the [M3T](../M3T) 3D object tracker. 
+A ROS 2 (Humble) wrapper around the [M3T](../M3T) 3D object tracker, split into
+**two nodes** so the tracker is decoupled from its image source and can be
+driven by a recorded sequence, a rosbag, or a real camera by only matching topic
+names. Object, initial pose, and modality combination are selectable from launch
+args / parameters. No GUI window — everything is published for RViz.
 
-A single in-process node runs the tracker on a recorded **RGB-D** sequence read from disk (no inter-node image topics), with the **object, initial pose, and modality combination selectable from launch args / parameters**, and publishes everything needed to visualize tracking in RViz.
+## Nodes
+
+```
+m3t_image_publisher_node ──/camera/color/image_raw────────▶ m3t_tracker_node
+  (node 1, the "camera")  ──/camera/depth/image_raw────────▶  (node 2)
+   reads the sequence,    ──/camera/{color,depth}/camera_info▶  subscribes,
+   publishes images +     ──TF world→object_gt + marker_gt───▶  tracks, publishes
+   GT (TF + mesh marker)                                        estimate + monitors
+```
+
+- **Replace node 1 with a real camera driver** (or a bag) by matching the topic
+  names — node 2 is unchanged.
+- Node 2 receives already-decoded pixels (no PNG decode in its loop), so its loop
+  is bounded by the solve, not by image decoding.
 
 ## Design
 
-- **In-process, no topic round-trip for images.** The tracker talks to M3T `Camera` objects by direct C++ calls (M3T's `LoaderColorCamera` / `LoaderDepthCamera` read the sequence from disk). Swapping to a live camera later only means providing ROS-backed `Camera` subclasses.
-- **Two threads, decoupled.** A dedicated **worker thread** drives the tracker step by step and runs *only* the pose solve (`ExecuteTrackingStep`) plus all OpenGL. A separate **publisher** (a ROS wall-timer on the spin thread) reads the latest **snapshot** and does all ROS serialization + the ORB image. They share one mutex-guarded `Snapshot` (pose + cloned, ref-counted `cv::Mat`), so the publisher never blocks or corrupts the solve loop — no data race, no segfault. Publish rate is independent of solve rate.
-- **Modality selection** builds the `Link` with exactly the chosen modalities: `region`, `depth`, `texture`.
-- **Ground truth** from `poses_gt_matrix.txt` is published alongside the estimate.
+- **In-process cameras.** Node 2 wraps the topics in M3T `Camera` subclasses
+  (`RosColorCamera` / `RosDepthCamera`) so the tracker talks to them by direct
+  C++ calls.
+- **Two threads (node 2), decoupled.** A **worker** thread drives the tracker
+  step by step, runs *only* the pose solve (`ExecuteTrackingStep`) + OpenGL, and
+  logs timing/error. A **wall-timer** (spin thread) publishes the estimate
+  overlay/keypoints/marker/TF from a mutex-guarded snapshot (cloned, ref-counted
+  `cv::Mat`) — no data race, no segfault, and the solve loop is never blocked.
+- **`m3t` is a colcon package**: `colcon build --packages-up-to m3t_ros2` builds
+  M3T first and links it — no manual `make`.
+
+## Initial guess (streaming-safe)
+
+A live source keeps moving, so a fixed frame-0 pose no longer matches the current
+image. Node 2 therefore seeds the tracker from a pose **aligned to the current
+frame**, obtained by a `tf2` lookup of the GT/detector frame that node 1
+broadcasts:
+
+- `use_gt_initial_pose:=true` (default): seed from the `object_gt` TF (in this
+  synthetic setup node 1 is the pose oracle; a real **detector** — AprilTag / DNN
+  / mocap — would publish this TF instead).
+- `use_gt_initial_pose:=false`: seed from a fixed `static_detector.yaml` (a known
+  start pose for a real camera).
+- `~/redetect` (`std_srvs/Trigger`): re-initialize from the latest pose on demand
+  (after a loss or a sequence loop).
+
+## Tracking-performance monitor
+
+Every `log_period` the worker compares its estimate to the GT TF and logs the
+**pure solve time** *and* the **tracking error + a TRACKED/LOST verdict**, so the
+solve time is only trusted while on-track:
+
+```
+solve: 114 | mean 0.98 ms (1025 Hz) | min 0.86 max 1.26 | loop 57 Hz | err pos 4.6/13.8 mm rot 12.8/32.9 deg | TRACKED
+```
+(`err pos mean/max mm`, `rot mean/max deg`; verdict is position-based against
+`lost_threshold`, since symmetric objects are rotation-ambiguous.)
 
 ## Build
 
 ```bash
-cd <workspace_dir>
-NUM_JOBS=2 && \
-export CMAKE_BUILD_PARALLEL_LEVEL=${NUM_JOBS} && \
-export MAKEFLAGS=-j${NUM_JOBS} && \
-export NINJAFLAGS=-j${NUM_JOBS} && \
-colcon build --symlink-install \
-  --packages-up-to m3t_ros2 \
-  --executor sequential --parallel-workers ${NUM_JOBS} \
-  --cmake-force-configure \
-  --cmake-args -DBUILD_TESTING=OFF -DCMAKE_BUILD_TYPE=Release && \
-  . install/setup.bash
+cd ~/ocs2_ros2_ws
+colcon build --packages-up-to m3t_ros2
+source install/setup.bash
 ```
 
-## Generate a sequence (once)
-
-The node consumes a folder produced by M3T's `generate_orbit_sequence` (see [../m3t_instruction.md](../m3t_instruction.md) §4d–4f):
+## Generate a sequence (once, for node 1)
 
 ```bash
-cd <workspace_dir>/src/3dobjecttracking/M3T/build/examples
+cd ~/ocs2_ros2_ws/src/3dobjecttracking/M3T/build/examples
 export DISPLAY=:0 XDG_RUNTIME_DIR=/tmp/runtime-root
 ./generate_orbit_sequence ../../data/_body/cylinder.yaml ../../temp/rgbd_cylinder 180 0.002 0.15
+# writes color/depth PNGs, *_camera.yaml, static_detector.yaml, poses_gt_matrix.txt
 ```
 
 ## Run
@@ -42,61 +83,53 @@ export DISPLAY=:0 XDG_RUNTIME_DIR=/tmp/runtime-root
 ```bash
 export DISPLAY=:0 XDG_RUNTIME_DIR=/tmp/runtime-root   # offscreen GL for the renderer
 
-ros2 launch m3t_ros2 m3t.launch.py \
-  object:=cylinder \
-  modalities:=region,depth \
-  rviz:=true
-
-ros2 launch m3t_ros2 m3t.launch.py \
-  object:=mustard  \
-  modalities:=region,depth,texture \
-  rviz:=true
+ros2 launch m3t_ros2 m3t.launch.py object:=box modalities:=region,depth,texture rviz:=true
+ros2 launch m3t_ros2 m3t.launch.py object:=mustard modalities:=region,depth use_gt_initial_pose:=true
 ```
 
-Launch / node args: `object` (triangle|box|cylinder|mustard), `modalities` (comma list of region,depth,texture), `sequence_dir`, `m3t_root`, `rviz`, and:
+Launch args: `object` ∈ {triangle, box, cylinder, mustard}, `modalities`
+(comma combo of region,depth,texture), `use_gt_initial_pose`, `source_rate`
+(node 1 fps), `track_rate` (node 2 solve loop; 0 = as fast as possible),
+`publish_rate`, `log_period`, `rviz`, `m3t_root`, and the four `*_topic` names.
 
-| Param | Default | Meaning |
-|-------|---------|---------|
-| `track_rate` | `0.0` | solve-loop Hz; **0 = as fast as possible** (for benchmarking) |
-| `publish_rate` | `30.0` | Hz of the decoupled publisher / snapshot |
-| `log_period` | `2.0` | seconds between solve-time log lines |
+## Topics / TF / services
 
-## Solve-time logging
+| Interface | Type | From |
+|-----------|------|------|
+| `/camera/color/image_raw` (+`camera_info`) | Image (bgr8) / CameraInfo | node 1 |
+| `/camera/depth/image_raw` (+`camera_info`) | Image (16UC1) / CameraInfo | node 1 |
+| TF `world→object_gt`, `~/marker_gt` | tf2 / Marker | node 1 (GT) |
+| `~/overlay/image`, `~/keypoints/image` | Image | node 2 |
+| TF `world→object_est`, `~/marker_est` | tf2 / Marker | node 2 (estimate) |
+| `~/redetect` | std_srvs/Trigger | node 2 |
 
-Every `log_period` seconds the worker logs the **pure pose-solve time** (`ExecuteTrackingStep` only — no image I/O, no rendering-for-viz, no ROS):
+## Verified — all objects × all modality combos
 
-```
-solve: 93 frames | mean 15.87 ms (63 Hz) | min 14.99 max 18.66 ms | loop 46 Hz
-```
+Solve is on-track (TRACKED). region ~0.7 ms, region+depth ~1 ms, depth-only
+~0.2 ms; **mustard region+depth+texture ~3.3 ms (~300 Hz — the paper's number)**.
 
-Measured on this arm64 Parallels VM (`track_rate:=0`):
+| Object | region | depth | texture | reg+dep | reg+tex | dep+tex | all |
+|--------|--------|-------|---------|---------|---------|---------|-----|
+| triangle | ✔ | ✖ | lost | ✖ | ✔ | ✖ | ✖ |
+| box | ✔ | ✔ᵖ | lost | ✔**best** | ✔ | ✔ᵖ | ✔**best** |
+| cylinder | ✔ᵖ | ✔ᵖ | lost | ✔ᵖ | ✔ᵖ | ✔ᵖ | ✔ᵖ |
+| mustard | ✔ᵖ | ✔ᵖ | lost | ✔ | lost | ✔ | drift |
 
-| Modalities | mean solve | ≈ solve Hz |
-|------------|-----------|-----------|
-| region | ~16–19 ms | ~55 Hz |
-| region + depth | ~31–41 ms | ~28 Hz |
-| region + depth + texture | ~35 ms | ~28 Hz |
+- **✔ᵖ** = position tracked, rotation ambiguous (cylinder/box/mustard have
+  rotational symmetries; the monitor correctly reports the large rot error).
+- **lost** = `texture`-alone loses lock — keypoints on smooth synthetic renders
+  are too weak on their own (expected).
+- **✖** = **triangle + depth**: the nearly-flat triangle (1.2 cm) has a
+  degenerate DepthModel (surface-point sampling) — an object-geometry limitation,
+  not a pipeline bug. Skip depth on the flat triangle.
 
-> The M3T papers report **300+ Hz**, but on **x86 + a real GPU**. Each solve does several OpenGL silhouette/depth renders (5 correspondence iterations); on Parallels' virtualized GL a render is ~3 ms, so region-only is ~15 ms/solve here. On real GPU hardware those renders drop to <1 ms and the CPU optimization dominates → hundreds of Hz. The node measures the pure solve time correctly; the absolute number reflects the VM's GL, not the tracker.
+## Notes / limitations
 
-## Published interfaces
-
-| Topic | Type | Content |
-|-------|------|---------|
-| `~/color/image_raw` | Image (bgr8) | raw color frame |
-| `~/depth/image_raw` | Image (16UC1) | raw depth frame (mm) |
-| `~/overlay/image` | Image (bgr8) | model normals blended over color (the old GUI view) |
-| `~/keypoints/image` | Image (bgr8) | ORB keypoints on color |
-| `~/marker_est`, `~/marker_gt` | Marker (MESH_RESOURCE) | mesh at estimate (red) / GT (green) |
-| TF `world→object_est`, `→object_gt` | tf2 | estimate / GT pose |
-
-## Verified
-
-- `colcon build --packages-up-to m3t_ros2` builds `m3t` then `m3t_ros2`.
-- Node runs region, region+depth, and region+depth+texture; publishing decoupled from solve (topics ~22–48 Hz while the solve loop runs independently).
-- Per-frame estimate vs ground-truth (matched by stamp): **mean 4.9 mm, max 13.8 mm** on the noisy+distorted cylinder (region+depth). The cylinder's spin about its symmetry axis is not observable, so only that DoF diverges.
-
-## Notes
-
-- `libm3t` is currently linked **statically**; making it a `.so` would need relaxing M3T's hidden-visibility preset.
+- `libm3t` is linked **statically**; a `.so` would need relaxing M3T's
+  hidden-visibility preset.
 - The renderer needs an X server for its offscreen GL context — set `DISPLAY`.
+- The est-vs-GT error includes a small timing lag (latest-GT vs the solved
+  frame); it distinguishes on-track (mm) from lost (cm+) reliably.
+- The `object_gt`/error path is synthetic-only. On a real camera (no GT), init
+  comes from a real detector on the same TF, and tracking health would use M3T's
+  correspondence/residual instead.
