@@ -12,20 +12,20 @@ Verified on arm64, Ubuntu 22.04, ROS 2 Humble.
 
 ```bash
 # 1. Build
-cd 3dobjecttracking/M3T && mkdir -p build temp && cd build
-cmake -DCMAKE_BUILD_TYPE=Release -DUSE_GTEST=ON \
+cd 3dobjecttracking/M3T && sudo mkdir -p build temp && cd build
+sudo cmake -DCMAKE_BUILD_TYPE=Release -DUSE_GTEST=ON \
       -DUSE_AZURE_KINECT=OFF -DUSE_REALSENSE=OFF ..
-cmake --build . -j$(nproc)
+sudo cmake --build . -j$(nproc)
 
 # 2. Run — HEADLESS (prints pose, no window)
 cd examples
-./run_on_recorded_sequence_headless \
+sudo  ./run_on_recorded_sequence_headless \
     ../../data/_sequence/color_camera.yaml ../../data/_body/triangle.yaml \
     ../../data/_body/triangle_static_detector.yaml ../../temp 10
 
 # 3. Run — GUI (viewer window, needs a display)
 export DISPLAY=:0
-./run_on_recorded_sequence_gui \
+sudo  ./run_on_recorded_sequence_gui \
     ../../data/_sequence/color_camera.yaml ../../data/_body/triangle.yaml \
     ../../data/_body/triangle_manual_detector.yaml ../../temp
 ```
@@ -39,7 +39,7 @@ Details below.
 Required: Eigen 3, GLEW, GLFW 3, OpenCV 4, and (for the tests) GTest.
 
 ```bash
-apt-get update && apt-get install -y \
+sudo  apt-get update && sudo apt-get install -y \
     libeigen3-dev libglew-dev libglfw3-dev \
     libopencv-dev libgtest-dev cmake build-essential
 ```
@@ -60,13 +60,13 @@ apt-get update && apt-get install -y \
 cd 3dobjecttracking/M3T
 mkdir -p build && cd build
 
-cmake -DCMAKE_BUILD_TYPE=Release \
+sudo cmake -DCMAKE_BUILD_TYPE=Release \
       -DUSE_GTEST=ON \
       -DUSE_AZURE_KINECT=OFF \
       -DUSE_REALSENSE=OFF \
       ..
 
-cmake --build . -j$(nproc)
+sudo cmake --build . -j$(nproc)
 ```
 
 - `USE_AZURE_KINECT` / `USE_REALSENSE` are OFF because no physical depth camera
@@ -80,9 +80,9 @@ The readme defines a correct build as being able to run `./gtest_run`:
 
 ```bash
 cd 3dobjecttracking/M3T
-mkdir -p temp                     # tests write here
+sudo mkdir -p temp                     # tests write here
 cd build/test
-./gtest_run
+sudo ./gtest_run
 ```
 
 Expected on arm64: **208 / 213 pass**. The 5 failures
@@ -120,10 +120,10 @@ no clicking. It runs for `n_frames` (optional 5th arg, default 10) then exits.
 
 ```bash
 cd 3dobjecttracking/M3T
-mkdir -p temp
+sudo mkdir -p temp
 cd build/examples
 
-./run_on_recorded_sequence_headless \
+sudo ./run_on_recorded_sequence_headless \
     ../../data/_sequence/color_camera.yaml \
     ../../data/_body/triangle.yaml \
     ../../data/_body/triangle_static_detector.yaml \
@@ -156,7 +156,7 @@ reference points on `D`, then use keys `D`=detect, `T`=track, `X`=detect+track,
 cd build/examples
 
 export DISPLAY=:0
-./run_on_recorded_sequence_gui \
+sudo ./run_on_recorded_sequence_gui \
     ../../data/_sequence/color_camera.yaml \
     ../../data/_body/triangle.yaml \
     ../../data/_body/triangle_manual_detector.yaml \
@@ -179,7 +179,7 @@ loops until you press `Q` (`S`=stop, `D`=detect, `T`/`X`=track).
 cd build/examples
 
 export DISPLAY=:0
-./run_on_recorded_sequence_gui_auto \
+sudo ./run_on_recorded_sequence_gui_auto \
     ../../data/_sequence/color_camera.yaml \
     ../../data/_body/triangle.yaml \
     ../../data/_body/triangle_static_detector.yaml \
@@ -190,7 +190,7 @@ Add a `viz` argument at the end to also open the region-modality **debug
 window(s)** — the correspondence lines and result points overlaid on the object:
 
 ```bash
-./run_on_recorded_sequence_gui_auto \
+sudo ./run_on_recorded_sequence_gui_auto \
     ../../data/_sequence/color_camera.yaml \
     ../../data/_body/triangle.yaml \
     ../../data/_body/triangle_static_detector.yaml \
@@ -211,7 +211,7 @@ overlay follow the object over many frames, with exact ground truth.
 ```bash
 cd build/examples
 export DISPLAY=:0 XDG_RUNTIME_DIR=/tmp/runtime-root
-./generate_orbit_sequence ../../data/_body/triangle.yaml ../../temp/orbit 180
+sudo ./generate_orbit_sequence ../../data/_body/triangle.yaml ../../temp/orbit 180
 ```
 
 **Step 2 — track it** (headless to print, or GUI to watch). Note the camera and
@@ -219,12 +219,12 @@ detector metafiles now come from the generated `temp/orbit` folder:
 
 ```bash
 # headless (prints tracked pose per frame; compare with temp/orbit/poses_gt.txt)
-./run_on_recorded_sequence_headless \
+sudo ./run_on_recorded_sequence_headless \
     ../../temp/orbit/color_camera.yaml ../../data/_body/triangle.yaml \
     ../../temp/orbit/static_detector.yaml ../../temp/orbit 180
 
 # GUI (watch the overlay track the moving triangle; press Q to quit)
-./run_on_recorded_sequence_gui_auto \
+sudo ./run_on_recorded_sequence_gui_auto \
     ../../temp/orbit/color_camera.yaml ../../data/_body/triangle.yaml \
     ../../temp/orbit/static_detector.yaml ../../temp/orbit
 ```
@@ -245,13 +245,13 @@ body:
 
 ```bash
 # box (0.08 x 0.05 x 0.03 m)
-./generate_orbit_sequence ../../data/_body/box.yaml ../../temp/orbit_box 180
-./run_on_recorded_sequence_gui_auto ../../temp/orbit_box/color_camera.yaml \
+sudo ./generate_orbit_sequence ../../data/_body/box.yaml ../../temp/orbit_box 180
+sudo ./run_on_recorded_sequence_gui_auto ../../temp/orbit_box/color_camera.yaml \
     ../../data/_body/box.yaml ../../temp/orbit_box/static_detector.yaml ../../temp/orbit_box
 
 # cylinder (r=0.028, h=0.08 m)
-./generate_orbit_sequence ../../data/_body/cylinder.yaml ../../temp/orbit_cyl 180
-./run_on_recorded_sequence_gui_auto ../../temp/orbit_cyl/color_camera.yaml \
+sudo ./generate_orbit_sequence ../../data/_body/cylinder.yaml ../../temp/orbit_cyl 180
+sudo ./run_on_recorded_sequence_gui_auto ../../temp/orbit_cyl/color_camera.yaml \
     ../../data/_body/cylinder.yaml ../../temp/orbit_cyl/static_detector.yaml ../../temp/orbit_cyl
 ```
 
@@ -281,15 +281,15 @@ into `temp/ycb_mustard/` (where the YAML points):
 
 ```bash
 cd 3dobjecttracking/M3T
-mkdir -p temp/ycb_mustard && (cd temp/ycb_mustard && \
-  curl -sL https://ycb-benchmarks.s3.amazonaws.com/data/google/006_mustard_bottle_google_16k.tgz | tar xz)
+sudo mkdir -p temp/ycb_mustard && (cd temp/ycb_mustard && \
+  sudo curl -sL https://ycb-benchmarks.s3.amazonaws.com/data/google/006_mustard_bottle_google_16k.tgz | tar xz)
 
 cd build/examples
 export DISPLAY=:0 XDG_RUNTIME_DIR=/tmp/runtime-root
 # generate (auto-detects the ~19 cm bottle size and frames it)
-./generate_orbit_sequence ../../data/_body/ycb_mustard_bottle.yaml ../../temp/orbit_mustard 180
+sudo ./generate_orbit_sequence ../../data/_body/ycb_mustard_bottle.yaml ../../temp/orbit_mustard 180
 # watch it track
-./run_on_recorded_sequence_gui_auto ../../temp/orbit_mustard/color_camera.yaml \
+sudo ./run_on_recorded_sequence_gui_auto ../../temp/orbit_mustard/color_camera.yaml \
     ../../data/_body/ycb_mustard_bottle.yaml \
     ../../temp/orbit_mustard/static_detector.yaml ../../temp/orbit_mustard
 ```
@@ -323,10 +323,10 @@ generate_orbit_sequence <body> <out> [n_frames=180] [depth_noise=0] [distortion=
 cd build/examples
 export DISPLAY=:0 XDG_RUNTIME_DIR=/tmp/runtime-root
 # generate an RGB-D cylinder sequence with depth noise + slight distortion
-./generate_orbit_sequence ../../data/_body/cylinder.yaml ../../temp/rgbd_cyl 180 0.002 0.15
+sudo ./generate_orbit_sequence ../../data/_body/cylinder.yaml ../../temp/rgbd_cyl 180 0.002 0.15
 
 # track with Region + Depth
-./run_on_recorded_sequence_rgbd \
+sudo ./run_on_recorded_sequence_rgbd \
     ../../temp/rgbd_cyl/color_camera.yaml ../../temp/rgbd_cyl/depth_camera.yaml \
     ../../data/_body/cylinder.yaml ../../temp/rgbd_cyl/static_detector.yaml \
     ../../temp/rgbd_cyl 180
@@ -362,7 +362,7 @@ overlaid on the color frames while depth refines the pose (needs a display):
 
 ```bash
 export DISPLAY=:0
-./run_on_recorded_sequence_gui_rgbd \
+sudo ./run_on_recorded_sequence_gui_rgbd \
     ../../temp/rgbd_cyl/color_camera.yaml ../../temp/rgbd_cyl/depth_camera.yaml \
     ../../data/_body/cylinder.yaml ../../temp/rgbd_cyl/static_detector.yaml \
     ../../temp/rgbd_cyl
@@ -373,7 +373,7 @@ Region + **TextureModality** (image keypoints validated against a
 `FocusedSilhouetteRenderer`). It uses the color sequence only:
 
 ```bash
-./run_on_recorded_sequence_texture \
+sudo ./run_on_recorded_sequence_texture \
     ../../temp/rgbd_box/color_camera.yaml ../../data/_body/box.yaml \
     ../../temp/rgbd_box/static_detector.yaml ../../temp/rgbd_box 180
 ```
