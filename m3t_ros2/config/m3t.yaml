@@ -1,6 +1,6 @@
 m3t_tracker_node:
   ros__parameters:
-    modalities: "region,depth"
+    modalities: "region,depth,texture" # at most "region,depth,texture"
     track_rate: 0.0
     publish_rate: 60.0
     log_period: 2.0
@@ -36,6 +36,7 @@ m3t_synthetic_source:
     depth_noise: 0.0
     distortion: 0.0
     depth_scale: 0.001
+    motion_mode: orbit
     spin_turns: 1.0
     nod_degrees: 25.0
     world_frame: camera

@@ -109,11 +109,23 @@ def _resolve_object(context):
 
     object_name = str(parameters.get("object_name", object_name))
     mesh_resource = mesh_override or "file://" + geometry_path
+    texture_path = str(parameters.get("texture_path", ""))
+    if texture_path and not os.path.isabs(texture_path):
+        texture_path = os.path.abspath(
+            os.path.join(os.path.dirname(object_config), texture_path)
+        )
+    if texture_path and not os.path.isfile(texture_path):
+        raise RuntimeError(f"texture asset does not exist: {texture_path}")
+    default_modalities = str(
+        parameters.get("modalities", "region,depth")
+    )
     embedded = _bool(context, "mesh_use_embedded_materials")
     return (
         object_name,
         object_config,
         geometry_path,
+        texture_path,
+        default_modalities,
         mesh_resource,
         embedded,
     )
@@ -128,6 +140,8 @@ def launch_setup(context, *args, **kwargs):
         object_name,
         object_config,
         geometry_path,
+        texture_path,
+        default_modalities,
         mesh_resource,
         mesh_embedded,
     ) = _resolve_object(context)
@@ -149,7 +163,12 @@ def launch_setup(context, *args, **kwargs):
         sequence_parameters = _read_ros_parameters(
             sequence_config, "m3t_image_publisher"
         )
-    modalities = _value(context, "modalities")
+    modalities_override = _value(context, "modalities").strip()
+    modalities = (
+        default_modalities
+        if modalities_override in ("", "auto")
+        else modalities_override
+    )
     sequence_dir = _value(context, "sequence_dir") or str(
         sequence_parameters.get("sequence_dir", "")
     )
@@ -184,6 +203,36 @@ def launch_setup(context, *args, **kwargs):
         )
     ]
     if source_mode == "synthetic":
+        synthetic_overrides = {
+            "object_name": object_name,
+            "geometry_path": geometry_path,
+            "texture_path": texture_path,
+            "publish_rate": source_rate,
+            "n_frames": int(_value(context, "n_frames")),
+            "loop": _bool(context, "loop"),
+            "depth_noise": float(_value(context, "depth_noise")),
+            "distortion": float(_value(context, "distortion")),
+            "depth_scale": float(_value(context, "depth_scale")),
+            "world_frame": world_frame,
+            "camera_frame": _value(context, "camera_frame"),
+            "gt_frame": gt_frame,
+            "mesh_resource": mesh_resource,
+            "mesh_scale": float(_value(context, "mesh_scale")),
+            "mesh_use_embedded_materials": mesh_embedded,
+            **topics,
+        }
+        if _value(context, "motion_mode"):
+            synthetic_overrides["motion_mode"] = _value(
+                context, "motion_mode"
+            )
+        if _value(context, "spin_turns"):
+            synthetic_overrides["spin_turns"] = float(
+                _value(context, "spin_turns")
+            )
+        if _value(context, "nod_degrees"):
+            synthetic_overrides["nod_degrees"] = float(
+                _value(context, "nod_degrees")
+            )
         nodes.append(
             Node(
                 package="m3t_ros2",
@@ -193,25 +242,7 @@ def launch_setup(context, *args, **kwargs):
                 parameters=[
                     config_file,
                     object_config,
-                    {
-                        "object_name": object_name,
-                        "geometry_path": geometry_path,
-                        "publish_rate": source_rate,
-                        "n_frames": int(_value(context, "n_frames")),
-                        "loop": _bool(context, "loop"),
-                        "depth_noise": float(_value(context, "depth_noise")),
-                        "distortion": float(_value(context, "distortion")),
-                        "depth_scale": float(_value(context, "depth_scale")),
-                        "spin_turns": float(_value(context, "spin_turns")),
-                        "nod_degrees": float(_value(context, "nod_degrees")),
-                        "world_frame": world_frame,
-                        "camera_frame": _value(context, "camera_frame"),
-                        "gt_frame": gt_frame,
-                        "mesh_resource": mesh_resource,
-                        "mesh_scale": float(_value(context, "mesh_scale")),
-                        "mesh_use_embedded_materials": mesh_embedded,
-                        **topics,
-                    }
+                    synthetic_overrides,
                 ],
             )
         )
@@ -328,7 +359,12 @@ def generate_launch_description():
             ),
             DeclareLaunchArgument("mesh_scale", default_value="1.0"),
             DeclareLaunchArgument(
-                "modalities", default_value="region,depth"
+                "modalities",
+                default_value="region,depth,texture",
+                description=(
+                    "region, depth, texture, any combination, or auto to "
+                    "use the object YAML recommendation"
+                ),
             ),
             DeclareLaunchArgument(
                 "model_cache_dir",
@@ -355,7 +391,7 @@ def generate_launch_description():
             DeclareLaunchArgument("event_driven", default_value="true"),
             DeclareLaunchArgument(
                 "image_outputs",
-                default_value="none",
+                default_value="overlay,keypoints",
                 description=(
                     "Tracker images: none, overlay, keypoints, "
                     "or overlay,keypoints"
@@ -367,8 +403,21 @@ def generate_launch_description():
             DeclareLaunchArgument("depth_noise", default_value="0.0"),
             DeclareLaunchArgument("distortion", default_value="0.0"),
             DeclareLaunchArgument("depth_scale", default_value="0.001"),
-            DeclareLaunchArgument("spin_turns", default_value="1.0"),
-            DeclareLaunchArgument("nod_degrees", default_value="25.0"),
+            DeclareLaunchArgument(
+                "motion_mode",
+                default_value="",
+                description="Optional synthetic override: orbit or static",
+            ),
+            DeclareLaunchArgument(
+                "spin_turns",
+                default_value="",
+                description="Optional synthetic YAML override",
+            ),
+            DeclareLaunchArgument(
+                "nod_degrees",
+                default_value="",
+                description="Optional synthetic YAML override",
+            ),
             DeclareLaunchArgument("world_frame", default_value="camera"),
             DeclareLaunchArgument("camera_frame", default_value="camera"),
             DeclareLaunchArgument("gt_frame", default_value="object_gt"),

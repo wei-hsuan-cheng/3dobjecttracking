@@ -40,7 +40,7 @@ If `install/` was deleted after the workspace had been sourced, start a fresh co
 
 ```text
 m3t_ros2/
-  assets/<object>/model.obj       mesh and future object assets
+  assets/<object>/               mesh, material, and texture assets
   config/m3t.yaml                 common node parameters
   config/objects/<object>.yaml    geometry and initial-pose parameters
   launch/m3t.launch.py            one launch interface
@@ -62,7 +62,7 @@ If `XDG_RUNTIME_DIR` is unset, the launch file creates a private OpenGL runtime 
 
 ## Run with the online synthetic source
 
-This replaces `generate_orbit_sequence`: RGB, depth, CameraInfo, and GT are rendered and published online without writing an image sequence.
+This replaces `generate_orbit_sequence`: RGB, depth, CameraInfo, and GT are rendered and published online without writing an image sequence. An object YAML can provide `texture_path`; the synthetic RGB source then renders the OBJ UV texture instead of surface-normal colors.
 
 ```bash
 ros2 launch m3t_ros2 m3t.launch.py \
@@ -72,7 +72,24 @@ ros2 launch m3t_ros2 m3t.launch.py \
   source:=synthetic object:=mustard rviz:=true
 ```
 
-Built-in objects are `triangle`, `box`, `cylinder`, and `mustard`. `modalities` accepts any comma-separated combination of `region`, `depth`, and `texture`; the stable default is `region,depth`, while texture remains available with `modalities:=region,depth,texture`.
+Built-in objects are `triangle`, `box`, `cylinder`, and `mustard`. `modalities` accepts any comma-separated combination of `region`, `depth`, and `texture`, and the launch default enables all three. Mustard uses the official YCB texture map in its synthetic RGB images. `modalities:=auto` uses the object YAML recommendation, which is `region,depth,texture` for mustard and `region,depth` when an object does not specify one.
+
+Synthetic GT motion is configured under `m3t_synthetic_source.ros__parameters` in `config/m3t.yaml`; an object-specific `gt_initial_pose` can also be placed in its object YAML. `gt_initial_pose` is the exact row-major body-to-world pose at frame zero. `translation_amplitude` is an optional `[x, y, z]` vector in meters; when omitted, the orbit amplitude scales with the automatically fitted viewing distance. `motion_mode: static` holds the initial pose, while `motion_mode: orbit` applies the configured translation, `spin_turns`, and `nod_degrees`. The optional `motion_mode`, `spin_turns`, and `nod_degrees` launch arguments override YAML only when explicitly supplied.
+
+```yaml
+m3t_synthetic_source:
+  ros__parameters:
+    motion_mode: orbit
+    spin_turns: 1.0
+    nod_degrees: 25.0
+    translation_amplitude: [0.08, 0.04, 0.05]
+    gt_initial_pose: [
+      1.0, 0.0, 0.0, 0.0,
+      0.0, 1.0, 0.0, 0.05,
+      0.0, 0.0, 1.0, 0.60,
+      0.0, 0.0, 0.0, 1.0
+    ]
+```
 
 The tracker defaults to one update per fresh synchronized camera frame (`event_driven:=true`). The reported inverse solve time is compute capacity, not the rate of independent pose estimates: actual tracking rate is bounded by the camera source rate. `event_driven:=false` repeatedly optimizes the same frame and is only intended for short compute benchmarks; it can over-update stateful modalities and destabilize tracking.
 

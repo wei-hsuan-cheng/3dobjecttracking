@@ -30,6 +30,7 @@
 
 #include "m3t_ros2/body_factory.hpp"
 #include "m3t_ros2/ground_truth_publisher.hpp"
+#include "m3t_ros2/textured_renderer.hpp"
 
 namespace {
 
@@ -63,6 +64,14 @@ class SyntheticSourceNode : public rclcpp::Node {
     depth_scale_ = declare_parameter<double>("depth_scale", 0.001);
     spin_turns_ = declare_parameter<double>("spin_turns", 1.0);
     nod_degrees_ = declare_parameter<double>("nod_degrees", 25.0);
+    motion_mode_ =
+        declare_parameter<std::string>("motion_mode", "orbit");
+    const auto gt_initial_pose_values =
+        declare_parameter<std::vector<double>>(
+            "gt_initial_pose", std::vector<double>{});
+    const auto translation_amplitude_values =
+        declare_parameter<std::vector<double>>(
+            "translation_amplitude", std::vector<double>{});
     world_frame_ = declare_parameter<std::string>("world_frame", "camera");
     camera_frame_ =
         declare_parameter<std::string>("camera_frame", world_frame_);
@@ -72,6 +81,8 @@ class SyntheticSourceNode : public rclcpp::Node {
     mesh_scale_ = declare_parameter<double>("mesh_scale", 1.0);
     mesh_embedded_ =
         declare_parameter<bool>("mesh_use_embedded_materials", false);
+    texture_path_ =
+        declare_parameter<std::string>("texture_path", std::string{});
     const auto camera_intrinsics =
         declare_parameter<std::vector<double>>(
             "camera_intrinsics",
@@ -104,11 +115,47 @@ class SyntheticSourceNode : public rclcpp::Node {
     const auto gt_marker_topic = declare_parameter<std::string>(
         "gt_marker_topic", "/m3t/marker_gt");
 
+    if (motion_mode_ != "orbit" && motion_mode_ != "static") {
+      throw std::runtime_error("motion_mode must be orbit or static");
+    }
+    if (!gt_initial_pose_values.empty()) {
+      gt_initial_pose_ = m3t_ros2::TransformFromRowMajor(
+          gt_initial_pose_values, "gt_initial_pose");
+      const Eigen::Matrix3f rotation = gt_initial_pose_.rotation();
+      const Eigen::RowVector4f homogeneous_row =
+          gt_initial_pose_.matrix().row(3);
+      if (!gt_initial_pose_.matrix().allFinite() ||
+          (rotation.transpose() * rotation -
+           Eigen::Matrix3f::Identity()).norm() > 1.0e-4f ||
+          std::abs(rotation.determinant() - 1.0f) > 1.0e-4f ||
+          (homogeneous_row -
+           Eigen::RowVector4f{0.0f, 0.0f, 0.0f, 1.0f}).norm() > 1.0e-5f) {
+        throw std::runtime_error(
+            "gt_initial_pose must be a finite rigid 4x4 transform");
+      }
+      has_gt_initial_pose_ = true;
+    }
+    if (!translation_amplitude_values.empty()) {
+      if (translation_amplitude_values.size() != 3) {
+        throw std::runtime_error(
+            "translation_amplitude must contain [x, y, z] in meters");
+      }
+      translation_amplitude_ = Eigen::Vector3f{
+          static_cast<float>(translation_amplitude_values[0]),
+          static_cast<float>(translation_amplitude_values[1]),
+          static_cast<float>(translation_amplitude_values[2])};
+      if (!translation_amplitude_.allFinite()) {
+        throw std::runtime_error(
+            "translation_amplitude must contain finite values");
+      }
+      has_translation_amplitude_ = true;
+    }
     if (publish_rate_ <= 0.0 || gt_publish_rate_ <= 0.0 ||
-        n_frames_ <= 1 || depth_scale_ <= 0.0) {
+        n_frames_ <= 1 || depth_scale_ <= 0.0 ||
+        !std::isfinite(spin_turns_) || !std::isfinite(nod_degrees_)) {
       throw std::runtime_error(
           "publish rates and depth_scale must be positive; "
-          "n_frames must be > 1");
+          "n_frames must be > 1; motion values must be finite");
     }
 
     auto qos = rclcpp::SensorDataQoS();
@@ -141,9 +188,12 @@ class SyntheticSourceNode : public rclcpp::Node {
     timer_ = create_wall_timer(period, [this]() { PublishFrame(); });
     RCLCPP_INFO(get_logger(),
                 "online synthetic RGB-D | body=%s frames=%d rate=%.1f Hz "
-                "GT=%.1f Hz depth_noise=%.4f distortion=%.3f",
+                "GT=%.1f Hz motion=%s appearance=%s depth_noise=%.4f "
+                "distortion=%.3f",
                 body_->name().c_str(), n_frames_, publish_rate_,
-                gt_publish_rate_, depth_noise_, distortion_);
+                gt_publish_rate_, motion_mode_.c_str(),
+                textured_renderer_ ? "texture" : "surface-normal",
+                depth_noise_, distortion_);
   }
 
  private:
@@ -159,6 +209,17 @@ class SyntheticSourceNode : public rclcpp::Node {
         !renderer_->SetUp()) {
       throw std::runtime_error("failed to set up synthetic M3T renderer");
     }
+    if (!texture_path_.empty()) {
+      textured_renderer_ =
+          std::make_shared<m3t_ros2::FullTexturedRenderer>(
+              "synthetic_texture_renderer", renderer_geometry_, body_,
+              texture_path_, m3t::Transform3fA::Identity(), intrinsics_,
+              0.1f, 5.0f);
+      if (!textured_renderer_->SetUp()) {
+        throw std::runtime_error(
+            "failed to set up synthetic texture renderer");
+      }
+    }
     if (body_->vertices().empty()) {
       throw std::runtime_error("body mesh contains no vertices");
     }
@@ -170,9 +231,22 @@ class SyntheticSourceNode : public rclcpp::Node {
       upper = upper.cwiseMax(vertex);
     }
     mesh_center_ = 0.5f * (lower + upper);
+    mesh_center_in_body_ =
+        body_->geometry2body_pose() * mesh_center_;
     const float diagonal = (upper - lower).norm();
     viewing_distance_ =
         intrinsics_.fu * diagonal / (0.45f * intrinsics_.height);
+    if (!has_translation_amplitude_) {
+      translation_amplitude_ =
+          viewing_distance_ * Eigen::Vector3f{0.15f, 0.10f, 0.10f};
+    }
+    if (!has_gt_initial_pose_) {
+      gt_initial_pose_ = m3t::Transform3fA::Identity();
+      gt_initial_pose_.translation() =
+          Eigen::Vector3f{
+              0.0f, translation_amplitude_.y(), viewing_distance_} -
+          mesh_center_in_body_;
+    }
 
     depth_lut_.resize(65536);
     for (int value = 0; value < 65536; ++value) {
@@ -202,6 +276,8 @@ class SyntheticSourceNode : public rclcpp::Node {
   }
 
   m3t::Transform3fA PoseForFrame(int frame) const {
+    if (motion_mode_ == "static") return gt_initial_pose_;
+
     constexpr float kPi = 3.14159265358979323846f;
     const float phase =
         2.0f * kPi * static_cast<float>(frame) /
@@ -210,18 +286,22 @@ class SyntheticSourceNode : public rclcpp::Node {
         phase * static_cast<float>(spin_turns_);
     const float nod =
         static_cast<float>(nod_degrees_) * kPi / 180.0f * std::sin(phase);
-    const Eigen::Matrix3f rotation =
+    const Eigen::Matrix3f motion_rotation =
         (Eigen::AngleAxisf(nod, Eigen::Vector3f::UnitX()) *
          Eigen::AngleAxisf(spin, Eigen::Vector3f::UnitZ()))
             .toRotationMatrix();
-    const Eigen::Vector3f center_in_view{
-        viewing_distance_ * 0.15f * std::sin(phase),
-        viewing_distance_ * 0.10f * std::cos(phase),
-        viewing_distance_ * (1.0f + 0.10f * std::sin(phase))};
+    const Eigen::Vector3f initial_center =
+        gt_initial_pose_ * mesh_center_in_body_;
+    const Eigen::Vector3f translation_offset{
+        translation_amplitude_.x() * std::sin(phase),
+        translation_amplitude_.y() * (std::cos(phase) - 1.0f),
+        translation_amplitude_.z() * std::sin(phase)};
 
     m3t::Transform3fA pose{m3t::Transform3fA::Identity()};
-    pose.linear() = rotation;
-    pose.translation() = center_in_view - rotation * mesh_center_;
+    pose.linear() = gt_initial_pose_.rotation() * motion_rotation;
+    pose.translation() =
+        initial_center + translation_offset -
+        pose.rotation() * mesh_center_in_body_;
     return pose;
   }
 
@@ -239,23 +319,30 @@ class SyntheticSourceNode : public rclcpp::Node {
     const m3t::Transform3fA pose = PoseForFrame(frame_index_);
     body_->set_body2world_pose(pose);
     if (!renderer_->StartRendering() || !renderer_->FetchNormalImage() ||
-        !renderer_->FetchDepthImage()) {
+        !renderer_->FetchDepthImage() ||
+        (textured_renderer_ &&
+         (!textured_renderer_->StartRendering() ||
+          !textured_renderer_->FetchColorImage()))) {
       RCLCPP_ERROR(get_logger(), "rendering failed at frame %d", frame_index_);
       return;
     }
 
     cv::Mat color;
-    cv::cvtColor(renderer_->normal_image(), color, cv::COLOR_BGRA2BGR);
+    if (textured_renderer_) {
+      color = textured_renderer_->color_image();
+    } else {
+      cv::cvtColor(renderer_->normal_image(), color, cv::COLOR_BGRA2BGR);
+    }
+    const cv::Mat &normal = renderer_->normal_image();
     const cv::Mat &raw_depth = renderer_->depth_image();
     cv::Mat depth(intrinsics_.height, intrinsics_.width, CV_16U,
                   cv::Scalar{0});
     for (int y = 0; y < intrinsics_.height; ++y) {
-      const auto *color_row = color.ptr<cv::Vec3b>(y);
+      const auto *normal_row = normal.ptr<cv::Vec4b>(y);
       const auto *raw_depth_row = raw_depth.ptr<ushort>(y);
       auto *depth_row = depth.ptr<ushort>(y);
       for (int x = 0; x < intrinsics_.width; ++x) {
-        const cv::Vec3b &pixel = color_row[x];
-        if (!(pixel[0] || pixel[1] || pixel[2])) continue;
+        if (normal_row[x][3] == 0) continue;
         float z = depth_lut_[raw_depth_row[x]];
         if (depth_noise_ > 0.0) {
           z += static_cast<float>(depth_noise_) * z * z * gaussian_(rng_);
@@ -302,6 +389,8 @@ class SyntheticSourceNode : public rclcpp::Node {
   std::string camera_frame_;
   std::string gt_frame_;
   std::string mesh_resource_;
+  std::string texture_path_;
+  std::string motion_mode_{"orbit"};
   double publish_rate_{30.0};
   double gt_publish_rate_{60.0};
   int n_frames_{240};
@@ -313,14 +402,20 @@ class SyntheticSourceNode : public rclcpp::Node {
   double nod_degrees_{25.0};
   double mesh_scale_{1.0};
   bool mesh_embedded_{false};
+  bool has_gt_initial_pose_{false};
+  bool has_translation_amplitude_{false};
   int frame_index_{0};
 
   m3t::Intrinsics intrinsics_{};
   Eigen::Vector3f mesh_center_{Eigen::Vector3f::Zero()};
+  Eigen::Vector3f mesh_center_in_body_{Eigen::Vector3f::Zero()};
+  Eigen::Vector3f translation_amplitude_{Eigen::Vector3f::Zero()};
+  m3t::Transform3fA gt_initial_pose_{m3t::Transform3fA::Identity()};
   float viewing_distance_{0.5f};
   std::shared_ptr<m3t::Body> body_;
   std::shared_ptr<m3t::RendererGeometry> renderer_geometry_;
   std::shared_ptr<m3t::FullNormalRenderer> renderer_;
+  std::shared_ptr<m3t_ros2::FullTexturedRenderer> textured_renderer_;
   std::vector<float> depth_lut_;
   cv::Mat map_x_;
   cv::Mat map_y_;

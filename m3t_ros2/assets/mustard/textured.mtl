@@ -1,6 +1,3 @@
 newmtl material_0
-Ka 0.20 0.15 0.01
-Kd 0.95 0.70 0.05
-Ks 0.10 0.10 0.10
-d 1.0
-illum 2
+# shader_type beckmann
+map_Kd texture_map.png

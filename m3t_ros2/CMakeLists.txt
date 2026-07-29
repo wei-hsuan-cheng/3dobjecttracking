@@ -46,7 +46,9 @@ target_include_directories(m3t_image_publisher_node PRIVATE include)
 ament_target_dependencies(m3t_image_publisher_node ${ROS_DEPS})
 target_link_libraries(m3t_image_publisher_node m3t)
 
-add_executable(m3t_synthetic_source_node src/synthetic_source_node.cpp)
+add_executable(m3t_synthetic_source_node
+  src/synthetic_source_node.cpp
+  src/textured_renderer.cpp)
 target_include_directories(m3t_synthetic_source_node PRIVATE include)
 ament_target_dependencies(m3t_synthetic_source_node ${ROS_DEPS})
 target_link_libraries(m3t_synthetic_source_node m3t)
