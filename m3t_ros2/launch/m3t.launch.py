@@ -32,6 +32,7 @@ BUILTIN_OBJECTS = {
     "triangle": "triangle.yaml",
     "box": "box.yaml",
     "cylinder": "cylinder.yaml",
+    "mustard": "mustard.yaml",
 }
 
 

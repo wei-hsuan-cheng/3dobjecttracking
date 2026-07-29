@@ -65,9 +65,12 @@ This replaces `generate_orbit_sequence`: RGB, depth, CameraInfo, and GT are rend
 ```bash
 ros2 launch m3t_ros2 m3t.launch.py \
   source:=synthetic object:=box rviz:=true
+
+ros2 launch m3t_ros2 m3t.launch.py \
+  source:=synthetic object:=mustard rviz:=true
 ```
 
-Built-in objects are `triangle`, `box`, and `cylinder`. `modalities` accepts any comma-separated combination of `region`, `depth`, and `texture`; the default enables all three.
+Built-in objects are `triangle`, `box`, `cylinder`, and `mustard`. `modalities` accepts any comma-separated combination of `region`, `depth`, and `texture`; the default enables all three.
 
 ## Run only the tracker with an external camera
 

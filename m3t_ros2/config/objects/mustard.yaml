@@ -1,0 +1,21 @@
+/**:
+  ros__parameters:
+    object_name: mustard
+    geometry_path: "../../assets/mustard/model.obj"
+    geometry_unit_in_meter: 1.0
+    geometry_counterclockwise: true
+    geometry_enable_culling: false
+    geometry2body_pose: [
+      1.0, 0.0, 0.0, 0.0,
+      0.0, 1.0, 0.0, 0.0,
+      0.0, 0.0, 1.0, 0.0,
+      0.0, 0.0, 0.0, 1.0
+    ]
+    body_id: 210
+    region_id: 210
+    initial_pose: [
+      1.0, 0.0, 0.0, 0.015339,
+      0.0, 1.0, 0.0, 0.088048545,
+      0.0, 0.0, 1.0, 0.55300295,
+      0.0, 0.0, 0.0, 1.0
+    ]
