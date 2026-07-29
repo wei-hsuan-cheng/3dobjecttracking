@@ -250,16 +250,19 @@ class SyntheticSourceNode : public rclcpp::Node {
     cv::Mat depth(intrinsics_.height, intrinsics_.width, CV_16U,
                   cv::Scalar{0});
     for (int y = 0; y < intrinsics_.height; ++y) {
+      const auto *color_row = color.ptr<cv::Vec3b>(y);
+      const auto *raw_depth_row = raw_depth.ptr<ushort>(y);
+      auto *depth_row = depth.ptr<ushort>(y);
       for (int x = 0; x < intrinsics_.width; ++x) {
-        const cv::Vec3b pixel = color.at<cv::Vec3b>(y, x);
+        const cv::Vec3b &pixel = color_row[x];
         if (!(pixel[0] || pixel[1] || pixel[2])) continue;
-        float z = depth_lut_[raw_depth.at<ushort>(y, x)];
+        float z = depth_lut_[raw_depth_row[x]];
         if (depth_noise_ > 0.0) {
           z += static_cast<float>(depth_noise_) * z * z * gaussian_(rng_);
         }
         const int scaled =
             static_cast<int>(std::lround(z / depth_scale_));
-        depth.at<ushort>(y, x) = static_cast<ushort>(
+        depth_row[x] = static_cast<ushort>(
             std::min(std::max(scaled, 0), 65535));
       }
     }

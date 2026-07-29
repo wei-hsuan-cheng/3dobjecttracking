@@ -12,7 +12,7 @@ set -euo pipefail
 
 mode="${1:-synthetic}"
 object="${M3T_SMOKE_OBJECT:-box}"
-modalities="${M3T_SMOKE_MODALITIES:-region,depth,texture}"
+modalities="${M3T_SMOKE_MODALITIES:-region,depth}"
 init_mode="${M3T_SMOKE_INIT_MODE:-gt}"
 timeout_seconds="${M3T_SMOKE_TIMEOUT:-75}"
 log_root="${M3T_SMOKE_LOG_DIR:-${ROS_HOME:-${HOME}/.ros}/m3t/smoke_logs}"
@@ -25,7 +25,7 @@ export ROS_DOMAIN_ID="${M3T_SMOKE_DOMAIN_ID:-$((100 + $$ % 100))}"
 export ROS_LOCALHOST_ONLY=1
 
 if [[ -z "${XDG_RUNTIME_DIR:-}" ]]; then
-  export XDG_RUNTIME_DIR="/tmp/m3t-runtime-$(id -u)"
+  export XDG_RUNTIME_DIR="${ROS_HOME:-${HOME}/.ros}/m3t/runtime-$(id -u)"
   mkdir -p "${XDG_RUNTIME_DIR}"
   chmod 700 "${XDG_RUNTIME_DIR}"
 fi

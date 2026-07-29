@@ -7,7 +7,7 @@
 // as before: a worker thread does the pure pose solve (timed, logged every
 // log_period) and optional overlay rendering; a decoupled wall-timer publishes
 // the enabled outputs from a mutex-guarded snapshot. It does NOT decode images
-// from disk, so its loop is bounded by the solve, not by PNG decoding.
+// from disk.
 
 #include <rclcpp/rclcpp.hpp>
 
@@ -28,6 +28,7 @@
 #include <filesystem>
 #include <memory>
 #include <mutex>
+#include <stdexcept>
 #include <string>
 #include <thread>
 #include <vector>
@@ -91,9 +92,65 @@ static m3t::Transform3fA TfToTransform(const geometry_msgs::msg::Transform &tr) 
                                   tr.rotation.z).toRotationMatrix();
   return t;
 }
-static float RotErrorDeg(const Eigen::Matrix3f &a, const Eigen::Matrix3f &b) {
+static float RotationDistanceDeg(const Eigen::Matrix3f &a,
+                                 const Eigen::Matrix3f &b) {
   const float c = 0.5f * ((a.transpose() * b).trace() - 1.0f);
   return std::acos(std::max(-1.0f, std::min(1.0f, c))) * 180.0f / float(M_PI);
+}
+static std::vector<Eigen::Matrix3f> ParseRotationSymmetries(
+    const std::vector<double> &values) {
+  if (values.size() % 9 != 0) {
+    throw std::invalid_argument(
+        "rotation_symmetries must contain row-major 3x3 matrices");
+  }
+  std::vector<Eigen::Matrix3f> symmetries{Eigen::Matrix3f::Identity()};
+  for (size_t offset = 0; offset < values.size(); offset += 9) {
+    Eigen::Matrix3f symmetry;
+    for (int row = 0; row < 3; ++row) {
+      for (int column = 0; column < 3; ++column) {
+        symmetry(row, column) =
+            static_cast<float>(values[offset + 3 * row + column]);
+      }
+    }
+    const float orthogonality_error =
+        (symmetry.transpose() * symmetry - Eigen::Matrix3f::Identity()).norm();
+    if (!symmetry.allFinite() || orthogonality_error > 1.0e-4f ||
+        std::abs(symmetry.determinant() - 1.0f) > 1.0e-4f) {
+      throw std::invalid_argument(
+          "rotation_symmetries entries must be valid rotation matrices");
+    }
+    symmetries.push_back(symmetry);
+  }
+  return symmetries;
+}
+static float SymmetricRotationErrorDeg(
+    const Eigen::Matrix3f &estimate, const Eigen::Matrix3f &reference,
+    const std::vector<Eigen::Matrix3f> &symmetries) {
+  float best_error = 180.0f;
+  for (const auto &symmetry : symmetries) {
+    best_error = std::min(
+        best_error,
+        RotationDistanceDeg(estimate * symmetry, reference));
+  }
+  return best_error;
+}
+static m3t::Transform3fA ClosestSymmetricPose(
+    const m3t::Transform3fA &pose, const m3t::Transform3fA &reference,
+    const std::vector<Eigen::Matrix3f> &symmetries) {
+  m3t::Transform3fA closest = pose;
+  float best_error =
+      RotationDistanceDeg(pose.rotation(), reference.rotation());
+  for (const auto &symmetry : symmetries) {
+    m3t::Transform3fA candidate = pose;
+    candidate.linear() = pose.rotation() * symmetry;
+    const float error =
+        RotationDistanceDeg(candidate.rotation(), reference.rotation());
+    if (error < best_error) {
+      best_error = error;
+      closest = candidate;
+    }
+  }
+  return closest;
 }
 static cv::Mat Composite(const cv::Mat &color, const cv::Mat &nrm) {
   cv::Mat nb, ov = color.clone();
@@ -114,7 +171,7 @@ int main(int argc, char **argv) {
   auto node = std::make_shared<rclcpp::Node>("m3t_tracker_node");
 
   const auto modalities = node->declare_parameter<std::string>(
-      "modalities", "region,depth,texture");
+      "modalities", "region,depth");
   auto model_cache_dir =
       node->declare_parameter<std::string>("model_cache_dir", "");
   const auto initial_pose_values =
@@ -122,12 +179,16 @@ int main(int argc, char **argv) {
           "initial_pose",
           {1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0,
            0.0, 0.0, 1.0, 0.5, 0.0, 0.0, 0.0, 1.0});
+  const auto rotation_symmetry_values =
+      node->declare_parameter<std::vector<double>>(
+          "rotation_symmetries", std::vector<double>{});
   const double track_rate = node->declare_parameter<double>("track_rate", 0.0);
-  const double publish_rate = node->declare_parameter<double>("publish_rate", 30.0);
+  const double publish_rate = node->declare_parameter<double>("publish_rate", 60.0);
   const double log_period = node->declare_parameter<double>("log_period", 2.0);
   // true  = solve once per NEW frame (honest per-frame solve time; loop = source rate)
-  // false = free-run, re-solving the latest frame (shows compute headroom, dilutes solve time)
-  const bool event_driven = node->declare_parameter<bool>("event_driven", false);
+  // false = benchmark mode that repeatedly solves the latest frame; this can
+  // over-update stateful modalities and is not intended for normal tracking.
+  const bool event_driven = node->declare_parameter<bool>("event_driven", true);
   const auto image_outputs = node->declare_parameter<std::string>(
       "image_outputs", "none");
   const float depth_scale = node->declare_parameter<double>("depth_scale", 0.001);
@@ -139,6 +200,8 @@ int main(int argc, char **argv) {
   const auto depth_info_topic = node->declare_parameter<std::string>("depth_info_topic", "/camera/depth/camera_info");
   const auto gt_frame = node->declare_parameter<std::string>("gt_frame", "object_gt");
   const double lost_threshold = node->declare_parameter<double>("lost_threshold", 0.05);  // m
+  const double lost_rotation_threshold = node->declare_parameter<double>(
+      "lost_rotation_threshold", 45.0);  // degrees; <= 0 disables the test
   // true  = seed the initial pose from the (image-aligned) GT/detector pose topic.
   // false = seed from the initial_pose ROS parameter in the object YAML.
   const bool use_gt_initial_pose = node->declare_parameter<bool>("use_gt_initial_pose", true);
@@ -151,6 +214,12 @@ int main(int argc, char **argv) {
   }
   const bool publish_overlay = HasOption(image_outputs, "overlay");
   const bool publish_keypoints = HasOption(image_outputs, "keypoints");
+  if (!event_driven) {
+    RCLCPP_WARN(
+        node->get_logger(),
+        "event_driven=false repeatedly updates stateful modalities with the "
+        "same image; use only for short compute benchmarks");
+  }
 
   m3t_ros2::RosPublisherConfig cfg;
   cfg.world_frame = node->declare_parameter<std::string>("world_frame", "camera");
@@ -165,10 +234,13 @@ int main(int argc, char **argv) {
 
   std::shared_ptr<m3t::Body> body;
   m3t::Transform3fA initial_pose;
+  std::vector<Eigen::Matrix3f> rotation_symmetries;
   try {
     body = m3t_ros2::DeclareAndCreateBody(node.get());
     initial_pose =
         m3t_ros2::TransformFromRowMajor(initial_pose_values, "initial_pose");
+    rotation_symmetries =
+        ParseRotationSymmetries(rotation_symmetry_values);
   } catch (const std::exception &error) {
     RCLCPP_FATAL(node->get_logger(), "object parameter error: %s",
                  error.what());
@@ -412,17 +484,47 @@ int main(int argc, char **argv) {
       if (event_driven) {
         while (running && rclcpp::ok() && color_camera->seq() == last_seq)
           std::this_thread::sleep_for(std::chrono::microseconds{200});
+        if (!running || !rclcpp::ok()) break;
         last_seq = color_camera->seq();
       }
       const auto iter_t0 = clk::now();
       if (!tracker->UpdateCameras(it)) { std::this_thread::sleep_for(std::chrono::milliseconds{1}); continue; }
-      tracker->UpdateSubscribers(it);
-      tracker->CalculateConsistentPoses();
-      tracker->ExecuteDetectingStep(it);
-      tracker->ExecuteStartingStep(it);
+      const auto pose_before_update = body->body2world_pose();
+      if (!tracker->UpdateSubscribers(it) ||
+          !tracker->CalculateConsistentPoses() ||
+          !tracker->ExecuteDetectingStep(it) ||
+          !tracker->ExecuteStartingStep(it)) {
+        body->set_body2world_pose(pose_before_update);
+        redetect_req.store(true);
+        RCLCPP_ERROR_THROTTLE(
+            node->get_logger(), *node->get_clock(), 2000,
+            "M3T frame preparation failed; restored the last pose and queued "
+            "re-detection");
+        continue;
+      }
       const auto s0 = clk::now();
-      tracker->ExecuteTrackingStep(it);  // *** pure pose solve ***
+      if (!tracker->ExecuteTrackingStep(it)) {
+        body->set_body2world_pose(pose_before_update);
+        redetect_req.store(true);
+        RCLCPP_ERROR_THROTTLE(
+            node->get_logger(), *node->get_clock(), 2000,
+            "M3T tracking step failed; restored the last pose and queued "
+            "re-detection");
+        continue;
+      }
       const double solve_ms = dsec(clk::now() - s0).count() * 1e3;
+      if (!body->body2world_pose().matrix().allFinite()) {
+        body->set_body2world_pose(pose_before_update);
+        redetect_req.store(true);
+        RCLCPP_ERROR_THROTTLE(
+            node->get_logger(), *node->get_clock(), 2000,
+            "M3T produced a non-finite pose; restored the last pose and queued "
+            "re-detection");
+        continue;
+      }
+      body->set_body2world_pose(ClosestSymmetricPose(
+          body->body2world_pose(), pose_before_update,
+          rotation_symmetries));
       solve_sum += solve_ms; solve_min = std::min(solve_min, solve_ms);
       solve_max = std::max(solve_max, solve_ms); ++solve_n; ++loop_n;
 
@@ -433,13 +535,20 @@ int main(int argc, char **argv) {
         const auto est = body->body2world_pose();
         const double perr = (est.translation() - gtp.translation()).norm();
         perr_sum += perr; perr_max = std::max(perr_max, perr);
-        const double rerr = RotErrorDeg(est.rotation(), gtp.rotation());
+        const double rerr = SymmetricRotationErrorDeg(
+            est.rotation(), gtp.rotation(), rotation_symmetries);
         rerr_sum += rerr; rerr_max = std::max(rerr_max, rerr);
-        if (perr > lost_threshold) ++lost_n;
+        if (perr > lost_threshold ||
+            (lost_rotation_threshold > 0.0 &&
+             rerr > lost_rotation_threshold))
+          ++lost_n;
         ++err_n;
       }
 
-      if (clk::now() - last_snap >= snap_period) {
+      // Every solved camera frame must replace the estimate snapshot. In
+      // free-run benchmark mode only, rate-limit snapshot preparation to the
+      // publication rate.
+      if (event_driven || clk::now() - last_snap >= snap_period) {
         cv::Mat overlay;
         if (publish_overlay && overlay_renderer->StartRendering() &&
             overlay_renderer->FetchNormalImage())

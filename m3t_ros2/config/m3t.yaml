@@ -1,14 +1,15 @@
 m3t_tracker_node:
   ros__parameters:
-    modalities: "region,depth,texture"
+    modalities: "region,depth"
     track_rate: 0.0
-    publish_rate: 30.0
+    publish_rate: 60.0
     log_period: 2.0
-    event_driven: false
+    event_driven: true
     image_outputs: "none"
     sync_tolerance: 0.02
     depth_scale: 0.001
     lost_threshold: 0.05
+    lost_rotation_threshold: 45.0
     use_gt_initial_pose: true
     world_frame: camera
     gt_frame: object_gt
@@ -23,7 +24,7 @@ m3t_synthetic_source:
     gt_publish_rate: 60.0
     n_frames: 240
     loop: true
-    depth_noise: 0.002
+    depth_noise: 0.0
     distortion: 0.0
     depth_scale: 0.001
     spin_turns: 1.0

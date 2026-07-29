@@ -4,6 +4,8 @@
 
 #include <m3t/texture_modality.h>
 
+#include <algorithm>
+
 namespace m3t {
 
 TextureModality::TextureModality(
@@ -460,8 +462,12 @@ bool TextureModality::CalculateResults(int iteration) {
   Eigen::Vector3f orientation{
       body2camera_pose_.rotation().inverse() *
       body2camera_pose_.translation().matrix().normalized()};
-  float rotation_difference =
-      acos(orientation.transpose() * orientation_last_keyframe_);
+  if (!orientation.allFinite() || !orientation_last_keyframe_.allFinite())
+    return false;
+  const float orientation_dot =
+      orientation.dot(orientation_last_keyframe_);
+  const float rotation_difference =
+      std::acos(std::clamp(orientation_dot, -1.0f, 1.0f));
   keyframe_age_++;
 
   // Compute new data if difference is above threshold

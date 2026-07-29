@@ -58,6 +58,8 @@ Generated region/depth models are runtime cache files, not source assets. The la
 
 Override it with `model_cache_dir:=/writable/path`. The tracker creates the directory and checks it is writable before setup. Direct `ros2 run` usage without that parameter falls back to `$ROS_HOME/m3t/cache/<object>` (normally `~/.ros/m3t/cache/<object>`).
 
+If `XDG_RUNTIME_DIR` is unset, the launch file creates a private OpenGL runtime directory under `${ROS_HOME:-$HOME/.ros}/m3t/` instead of relying on `/tmp/runtime-<user>`.
+
 ## Run with the online synthetic source
 
 This replaces `generate_orbit_sequence`: RGB, depth, CameraInfo, and GT are rendered and published online without writing an image sequence.
@@ -70,9 +72,9 @@ ros2 launch m3t_ros2 m3t.launch.py \
   source:=synthetic object:=mustard rviz:=true
 ```
 
-Built-in objects are `triangle`, `box`, `cylinder`, and `mustard`. `modalities` accepts any comma-separated combination of `region`, `depth`, and `texture`; the default enables all three.
+Built-in objects are `triangle`, `box`, `cylinder`, and `mustard`. `modalities` accepts any comma-separated combination of `region`, `depth`, and `texture`; the stable default is `region,depth`, while texture remains available with `modalities:=region,depth,texture`.
 
-The tracker defaults to free-running on the latest camera frame (`event_driven:=false`, `track_rate:=0`) so its loop is limited by the full tracking update rather than the camera frame rate. Set `event_driven:=true` when exactly one tracking update per new image is required.
+The tracker defaults to one update per fresh synchronized camera frame (`event_driven:=true`). The reported inverse solve time is compute capacity, not the rate of independent pose estimates: actual tracking rate is bounded by the camera source rate. `event_driven:=false` repeatedly optimizes the same frame and is only intended for short compute benchmarks; it can over-update stateful modalities and destabilize tracking.
 
 ## Run only the tracker with an external camera
 
@@ -122,6 +124,8 @@ ros2 launch m3t_ros2 m3t.launch.py \
 
 For an external config, relative `geometry_path` is resolved relative to that YAML file.
 
+Objects with discrete rotational symmetry can provide non-identity row-major 3x3 matrices in `rotation_symmetries`. The tracker uses them for symmetry-aware rotation error and selects the equivalent pose closest to the previous estimate, preventing TF-axis flips for objects such as the built-in box.
+
 ## Outputs and control
 
 | Interface | Type |
@@ -137,7 +141,7 @@ For an external config, relative `geometry_path` is resolved relative to that YA
 
 GT topics/TF exist only when the chosen development source publishes them. The default `gt_publish_rate` is 60 Hz and is configured in `config/m3t.yaml`.
 
-By default the tracker publishes no image topics (`image_outputs:=none`); raw RGB-D images remain available directly from the camera/source topics. Enable only the required debug output with `image_outputs:=overlay`, `image_outputs:=keypoints`, or `image_outputs:=overlay,keypoints`. `publish_rate` controls the output rate.
+By default the tracker publishes no image topics (`image_outputs:=none`); raw RGB-D images remain available directly from the camera/source topics. Enable only the required debug output with `image_outputs:=overlay`, `image_outputs:=keypoints`, or `image_outputs:=overlay,keypoints`. `publish_rate` controls TF, marker, and enabled debug-image output; its default is 60 Hz, while pose snapshots are refreshed for every solved camera frame.
 
 ## Automated smoke tests
 

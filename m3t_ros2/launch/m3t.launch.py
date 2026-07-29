@@ -22,7 +22,11 @@ import os
 import yaml
 from ament_index_python.packages import get_package_share_directory
 from launch import LaunchDescription
-from launch.actions import DeclareLaunchArgument, OpaqueFunction
+from launch.actions import (
+    DeclareLaunchArgument,
+    OpaqueFunction,
+    SetEnvironmentVariable,
+)
 from launch.conditions import IfCondition
 from launch.substitutions import LaunchConfiguration
 from launch_ros.actions import Node
@@ -52,6 +56,21 @@ def _read_ros_parameters(path, node_name):
     for key in (node_name, "/" + node_name):
         parameters.update(document.get(key, {}).get("ros__parameters", {}))
     return parameters
+
+
+def _xdg_runtime_dir():
+    configured = os.environ.get("XDG_RUNTIME_DIR")
+    if configured:
+        return configured
+    ros_home = os.environ.get(
+        "ROS_HOME", os.path.join(os.path.expanduser("~"), ".ros")
+    )
+    runtime_dir = os.path.join(
+        ros_home, "m3t", "runtime-" + str(os.getuid())
+    )
+    os.makedirs(runtime_dir, mode=0o700, exist_ok=True)
+    os.chmod(runtime_dir, 0o700)
+    return runtime_dir
 
 
 def _resolve_object(context):
@@ -159,7 +178,11 @@ def launch_setup(context, *args, **kwargs):
     gt_frame = _value(context, "gt_frame")
     source_rate = float(_value(context, "source_rate"))
 
-    nodes = []
+    nodes = [
+        SetEnvironmentVariable(
+            name="XDG_RUNTIME_DIR", value=_xdg_runtime_dir()
+        )
+    ]
     if source_mode == "synthetic":
         nodes.append(
             Node(
@@ -305,7 +328,7 @@ def generate_launch_description():
             ),
             DeclareLaunchArgument("mesh_scale", default_value="1.0"),
             DeclareLaunchArgument(
-                "modalities", default_value="region,depth,texture"
+                "modalities", default_value="region,depth"
             ),
             DeclareLaunchArgument(
                 "model_cache_dir",
@@ -327,9 +350,9 @@ def generate_launch_description():
             ),
             DeclareLaunchArgument("source_rate", default_value="30.0"),
             DeclareLaunchArgument("track_rate", default_value="0.0"),
-            DeclareLaunchArgument("publish_rate", default_value="30.0"),
+            DeclareLaunchArgument("publish_rate", default_value="60.0"),
             DeclareLaunchArgument("log_period", default_value="2.0"),
-            DeclareLaunchArgument("event_driven", default_value="false"),
+            DeclareLaunchArgument("event_driven", default_value="true"),
             DeclareLaunchArgument(
                 "image_outputs",
                 default_value="none",
@@ -341,7 +364,7 @@ def generate_launch_description():
             DeclareLaunchArgument("sync_tolerance", default_value="0.02"),
             DeclareLaunchArgument("n_frames", default_value="240"),
             DeclareLaunchArgument("loop", default_value="true"),
-            DeclareLaunchArgument("depth_noise", default_value="0.002"),
+            DeclareLaunchArgument("depth_noise", default_value="0.0"),
             DeclareLaunchArgument("distortion", default_value="0.0"),
             DeclareLaunchArgument("depth_scale", default_value="0.001"),
             DeclareLaunchArgument("spin_turns", default_value="1.0"),

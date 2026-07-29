@@ -13,6 +13,20 @@
     ]
     body_id: 100
     region_id: 100
+    # Non-identity rotational symmetries in body coordinates: 180 degrees
+    # around X, Y, and Z. The tracker uses these to keep TF on the closest
+    # temporal branch and to report symmetry-aware rotation error.
+    rotation_symmetries: [
+       1.0,  0.0,  0.0,
+       0.0, -1.0,  0.0,
+       0.0,  0.0, -1.0,
+      -1.0,  0.0,  0.0,
+       0.0,  1.0,  0.0,
+       0.0,  0.0, -1.0,
+      -1.0,  0.0,  0.0,
+       0.0, -1.0,  0.0,
+       0.0,  0.0,  1.0
+    ]
     initial_pose: [
       1.0, 0.0, 0.0, 0.0,
       0.0, 1.0, 0.0, 0.0284408,
