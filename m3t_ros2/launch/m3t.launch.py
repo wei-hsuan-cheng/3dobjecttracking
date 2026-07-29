@@ -241,6 +241,7 @@ def launch_setup(context, *args, **kwargs):
                     "depth_scale": float(_value(context, "depth_scale")),
                     "sync_tolerance": float(_value(context, "sync_tolerance")),
                     "event_driven": _bool(context, "event_driven"),
+                    "image_outputs": _value(context, "image_outputs"),
                     "track_rate": float(_value(context, "track_rate")),
                     "publish_rate": float(_value(context, "publish_rate")),
                     "log_period": float(_value(context, "log_period")),
@@ -250,8 +251,6 @@ def launch_setup(context, *args, **kwargs):
                     "mesh_use_embedded_materials": mesh_embedded,
                     "use_gt_initial_pose": use_tf_initial_pose,
                     "gt_frame": gt_frame,
-                    "publish_overlay": _bool(context, "publish_overlay"),
-                    "publish_keypoints": _bool(context, "publish_keypoints"),
                     **topics,
                 }
             ],
@@ -330,7 +329,15 @@ def generate_launch_description():
             DeclareLaunchArgument("track_rate", default_value="0.0"),
             DeclareLaunchArgument("publish_rate", default_value="30.0"),
             DeclareLaunchArgument("log_period", default_value="2.0"),
-            DeclareLaunchArgument("event_driven", default_value="true"),
+            DeclareLaunchArgument("event_driven", default_value="false"),
+            DeclareLaunchArgument(
+                "image_outputs",
+                default_value="none",
+                description=(
+                    "Tracker images: none, overlay, keypoints, "
+                    "or overlay,keypoints"
+                ),
+            ),
             DeclareLaunchArgument("sync_tolerance", default_value="0.02"),
             DeclareLaunchArgument("n_frames", default_value="240"),
             DeclareLaunchArgument("loop", default_value="true"),
@@ -356,8 +363,6 @@ def generate_launch_description():
                 "depth_info_topic",
                 default_value="/camera/depth/camera_info",
             ),
-            DeclareLaunchArgument("publish_overlay", default_value="true"),
-            DeclareLaunchArgument("publish_keypoints", default_value="true"),
             DeclareLaunchArgument("rviz", default_value="false"),
             OpaqueFunction(function=launch_setup),
         ]

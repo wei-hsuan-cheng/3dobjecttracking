@@ -4,13 +4,12 @@ m3t_tracker_node:
     track_rate: 0.0
     publish_rate: 30.0
     log_period: 2.0
-    event_driven: true
+    event_driven: false
+    image_outputs: "none"
     sync_tolerance: 0.02
     depth_scale: 0.001
     lost_threshold: 0.05
     use_gt_initial_pose: true
-    publish_overlay: true
-    publish_keypoints: true
     world_frame: camera
     gt_frame: object_gt
     color_topic: /camera/color/image_raw

@@ -72,6 +72,8 @@ ros2 launch m3t_ros2 m3t.launch.py \
 
 Built-in objects are `triangle`, `box`, `cylinder`, and `mustard`. `modalities` accepts any comma-separated combination of `region`, `depth`, and `texture`; the default enables all three.
 
+The tracker defaults to free-running on the latest camera frame (`event_driven:=false`, `track_rate:=0`) so its loop is limited by the full tracking update rather than the camera frame rate. Set `event_driven:=true` when exactly one tracking update per new image is required.
+
 ## Run only the tracker with an external camera
 
 ```bash
@@ -124,8 +126,8 @@ For an external config, relative `geometry_path` is resolved relative to that YA
 
 | Interface | Type |
 |---|---|
-| `~/overlay/image` | estimated-pose overlay |
-| `~/keypoints/image` | texture-modality debug image |
+| `~/overlay/image` | optional estimated-pose overlay |
+| `~/keypoints/image` | optional texture-modality debug image |
 | `~/marker_est` | estimated mesh marker |
 | TF `world_frame -> object_est` | estimated object pose |
 | `/m3t/pose_gt` | image-aligned GT pose from a development source |
@@ -134,6 +136,8 @@ For an external config, relative `geometry_path` is resolved relative to that YA
 | `~/redetect` | `std_srvs/srv/Trigger` |
 
 GT topics/TF exist only when the chosen development source publishes them. The default `gt_publish_rate` is 60 Hz and is configured in `config/m3t.yaml`.
+
+By default the tracker publishes no image topics (`image_outputs:=none`); raw RGB-D images remain available directly from the camera/source topics. Enable only the required debug output with `image_outputs:=overlay`, `image_outputs:=keypoints`, or `image_outputs:=overlay,keypoints`. `publish_rate` controls the output rate.
 
 ## Automated smoke tests
 

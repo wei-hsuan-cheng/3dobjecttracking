@@ -78,7 +78,7 @@ Visualization Manager:
         Value: /m3t/marker_gt
       Value: true
     - Class: rviz_default_plugins/Image
-      Enabled: true
+      Enabled: false
       Max Value: 1
       Median window: 5
       Min Value: 0
@@ -90,9 +90,9 @@ Visualization Manager:
         History Policy: Keep Last
         Reliability Policy: Best Effort
         Value: /m3t_tracker_node/overlay/image
-      Value: true
+      Value: false
     - Class: rviz_default_plugins/Image
-      Enabled: false
+      Enabled: true
       Max Value: 1
       Median window: 5
       Min Value: 0
@@ -103,8 +103,8 @@ Visualization Manager:
         Durability Policy: Volatile
         History Policy: Keep Last
         Reliability Policy: Best Effort
-        Value: /m3t_tracker_node/color/image_raw
-      Value: false
+        Value: /camera/color/image_raw
+      Value: true
     - Class: rviz_default_plugins/Image
       Enabled: false
       Max Value: 1
@@ -131,7 +131,7 @@ Visualization Manager:
         Durability Policy: Volatile
         History Policy: Keep Last
         Reliability Policy: Best Effort
-        Value: /m3t_tracker_node/depth/image_raw
+        Value: /camera/depth/image_raw
       Value: false
   Enabled: true
   Global Options:

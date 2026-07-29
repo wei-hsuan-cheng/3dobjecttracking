@@ -5,9 +5,9 @@
 // sequence publisher, a bag, or a real camera driver — only topic names differ)
 // via ROS-backed M3T cameras, and runs the tracker. Same two-thread structure
 // as before: a worker thread does the pure pose solve (timed, logged every
-// log_period) and all OpenGL; a decoupled wall-timer publishes the estimate
-// overlay/keypoints/marker/TF from a mutex-guarded snapshot. It does NOT decode
-// images from disk, so its loop is bounded by the solve, not by PNG decoding.
+// log_period) and optional overlay rendering; a decoupled wall-timer publishes
+// the enabled outputs from a mutex-guarded snapshot. It does NOT decode images
+// from disk, so its loop is bounded by the solve, not by PNG decoding.
 
 #include <rclcpp/rclcpp.hpp>
 
@@ -30,6 +30,7 @@
 #include <mutex>
 #include <string>
 #include <thread>
+#include <vector>
 
 #include <opencv2/imgproc.hpp>
 
@@ -56,8 +57,24 @@ namespace fs = std::filesystem;
 using clk = std::chrono::steady_clock;
 using dsec = std::chrono::duration<double>;
 
-static bool HasModality(const std::string &l, const std::string &m) {
+static bool HasOption(const std::string &l, const std::string &m) {
   return ("," + l + ",").find("," + m + ",") != std::string::npos;
+}
+static bool HasOnlyOptions(const std::string &list,
+                           const std::vector<std::string> &allowed) {
+  if (list.empty() || list == "none") return true;
+  size_t begin = 0;
+  while (begin <= list.size()) {
+    const size_t end = list.find(',', begin);
+    const auto option = list.substr(begin, end - begin);
+    if (option.empty() ||
+        std::find(allowed.begin(), allowed.end(), option) == allowed.end()) {
+      return false;
+    }
+    if (end == std::string::npos) break;
+    begin = end + 1;
+  }
+  return true;
 }
 static m3t::Intrinsics FromInfo(const sensor_msgs::msg::CameraInfo &i) {
   return {static_cast<float>(i.k[0]), static_cast<float>(i.k[4]),
@@ -110,7 +127,9 @@ int main(int argc, char **argv) {
   const double log_period = node->declare_parameter<double>("log_period", 2.0);
   // true  = solve once per NEW frame (honest per-frame solve time; loop = source rate)
   // false = free-run, re-solving the latest frame (shows compute headroom, dilutes solve time)
-  const bool event_driven = node->declare_parameter<bool>("event_driven", true);
+  const bool event_driven = node->declare_parameter<bool>("event_driven", false);
+  const auto image_outputs = node->declare_parameter<std::string>(
+      "image_outputs", "none");
   const float depth_scale = node->declare_parameter<double>("depth_scale", 0.001);
   const double sync_tolerance =
       node->declare_parameter<double>("sync_tolerance", 0.02);
@@ -123,14 +142,23 @@ int main(int argc, char **argv) {
   // true  = seed the initial pose from the (image-aligned) GT/detector pose topic.
   // false = seed from the initial_pose ROS parameter in the object YAML.
   const bool use_gt_initial_pose = node->declare_parameter<bool>("use_gt_initial_pose", true);
-  const bool publish_overlay = node->declare_parameter<bool>("publish_overlay", true);
+  if (!HasOnlyOptions(image_outputs, {"overlay", "keypoints"})) {
+    RCLCPP_FATAL(node->get_logger(),
+                 "image_outputs must be none, overlay, keypoints, or "
+                 "overlay,keypoints; got '%s'",
+                 image_outputs.c_str());
+    return 1;
+  }
+  const bool publish_overlay = HasOption(image_outputs, "overlay");
+  const bool publish_keypoints = HasOption(image_outputs, "keypoints");
 
   m3t_ros2::RosPublisherConfig cfg;
   cfg.world_frame = node->declare_parameter<std::string>("world_frame", "camera");
   cfg.mesh_resource = node->declare_parameter<std::string>("mesh_resource", "");
   cfg.mesh_scale = node->declare_parameter<double>("mesh_scale", 1.0);
   cfg.mesh_use_embedded_materials = node->declare_parameter<bool>("mesh_use_embedded_materials", false);
-  cfg.publish_keypoints = node->declare_parameter<bool>("publish_keypoints", true);
+  cfg.publish_overlay = publish_overlay;
+  cfg.publish_keypoints = publish_keypoints;
   cfg.publish_color = false;  // node 1 publishes raw color/depth + GT
   cfg.publish_depth = false;
   cfg.publish_gt = false;
@@ -159,9 +187,9 @@ int main(int argc, char **argv) {
                  cache_error.c_str());
     return 1;
   }
-  const bool use_region = HasModality(modalities, "region");
-  const bool use_depth = HasModality(modalities, "depth");
-  const bool use_texture = HasModality(modalities, "texture");
+  const bool use_region = HasOption(modalities, "region");
+  const bool use_depth = HasOption(modalities, "depth");
+  const bool use_texture = HasOption(modalities, "texture");
   if (!use_region && !use_depth && !use_texture) {
     RCLCPP_FATAL(node->get_logger(),
                  "modalities must contain region, depth, and/or texture; got '%s'",
@@ -308,10 +336,14 @@ int main(int argc, char **argv) {
         redetect_req = true; resp->success = true; resp->message = "re-detect queued";
       });
 
-  auto rg_overlay = std::make_shared<m3t::RendererGeometry>("rg_overlay");
-  rg_overlay->AddBody(body);
-  auto overlay_renderer = std::make_shared<m3t::FullNormalRenderer>(
-      "overlay_renderer", rg_overlay, color_camera, 0.01f, 10.0f);
+  std::shared_ptr<m3t::RendererGeometry> rg_overlay;
+  std::shared_ptr<m3t::FullNormalRenderer> overlay_renderer;
+  if (publish_overlay) {
+    rg_overlay = std::make_shared<m3t::RendererGeometry>("rg_overlay");
+    rg_overlay->AddBody(body);
+    overlay_renderer = std::make_shared<m3t::FullNormalRenderer>(
+        "overlay_renderer", rg_overlay, color_camera, 0.01f, 10.0f);
+  }
 
   // Camera calibration is intentionally not loaded from a tracker config file.
   // A camera driver must publish CameraInfo, and setup stays blocked until both
@@ -338,7 +370,9 @@ int main(int argc, char **argv) {
   RCLCPP_INFO(node->get_logger(), "got first frames — setting up tracker (region=%d depth=%d texture=%d)",
               use_region, use_depth, use_texture);
 
-  if (!tracker->SetUp() || !rg_overlay->SetUp() || !overlay_renderer->SetUp()) {
+  if (!tracker->SetUp() ||
+      (publish_overlay &&
+       (!rg_overlay->SetUp() || !overlay_renderer->SetUp()))) {
     RCLCPP_FATAL(node->get_logger(), "SetUp failed"); return 1; }
 
   auto ros_publisher = std::make_shared<m3t_ros2::RosPublisher>(node.get(), cfg);
@@ -407,10 +441,13 @@ int main(int argc, char **argv) {
 
       if (clk::now() - last_snap >= snap_period) {
         cv::Mat overlay;
-        if (publish_overlay && overlay_renderer->StartRendering() && overlay_renderer->FetchNormalImage())
+        if (publish_overlay && overlay_renderer->StartRendering() &&
+            overlay_renderer->FetchNormalImage())
           overlay = Composite(color_camera->image(), overlay_renderer->normal_image());
         std::lock_guard<std::mutex> lk{snap_mutex};
-        snap.color = color_camera->image();
+        if (publish_keypoints) {
+          snap.color = color_camera->image();
+        }
         snap.overlay = overlay;
         snap.body2world_est = body->body2world_pose();
         snap.geometry2world_est = body->geometry2world_pose();
@@ -439,8 +476,11 @@ int main(int argc, char **argv) {
     }
   });
 
-  RCLCPP_INFO(node->get_logger(), "tracking | track_rate=%.0f publish_rate=%.0f log_period=%.1fs",
-              track_rate, publish_rate, log_period);
+  RCLCPP_INFO(node->get_logger(),
+              "tracking | mode=%s track_rate=%.0f (0=max) publish_rate=%.0f "
+              "image_outputs=%s log_period=%.1fs",
+              event_driven ? "new-frame" : "free-run", track_rate,
+              publish_rate, image_outputs.c_str(), log_period);
   rclcpp::spin(node);
   running = false;
   worker.join();

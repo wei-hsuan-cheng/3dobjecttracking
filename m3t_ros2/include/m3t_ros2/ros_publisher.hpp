@@ -1,9 +1,9 @@
 // SPDX-License-Identifier: MIT
 // RosPublisher: snapshot-driven ROS output, decoupled from the tracking solve.
 // It is called by a wall-timer (not by the tracker), so the tracking thread is
-// never blocked by ROS serialization. Publishes raw color/depth, an ORB
-// keypoint image, a pre-rendered mesh-overlay image, and TF + mesh markers for
-// estimate and ground truth. No GUI windows.
+// never blocked by ROS serialization. Optional image publishers and their
+// processing are created only when requested. TF and the estimate marker remain
+// available independently of image output. No GUI windows.
 
 #ifndef M3T_ROS2_ROS_PUBLISHER_HPP_
 #define M3T_ROS2_ROS_PUBLISHER_HPP_
@@ -31,10 +31,11 @@ struct RosPublisherConfig {
   std::string mesh_resource;
   float mesh_scale{1.0f};
   bool mesh_use_embedded_materials{false};
-  bool publish_color{true};
-  bool publish_depth{true};
-  bool publish_gt{true};
-  bool publish_keypoints{true};
+  bool publish_color{false};
+  bool publish_depth{false};
+  bool publish_overlay{false};
+  bool publish_gt{false};
+  bool publish_keypoints{false};
 };
 
 // One consistent frame handed from the tracking thread to the publisher.
@@ -52,14 +53,25 @@ class RosPublisher {
   RosPublisher(rclcpp::Node *node, const RosPublisherConfig &cfg)
       : node_{node}, cfg_{cfg} {
     auto qos = rclcpp::SensorDataQoS();
-    pub_color_ = node_->create_publisher<sensor_msgs::msg::Image>("~/color/image_raw", qos);
-    pub_depth_ = node_->create_publisher<sensor_msgs::msg::Image>("~/depth/image_raw", qos);
-    pub_overlay_ = node_->create_publisher<sensor_msgs::msg::Image>("~/overlay/image", qos);
-    pub_keypoints_ = node_->create_publisher<sensor_msgs::msg::Image>("~/keypoints/image", qos);
+    if (cfg_.publish_color)
+      pub_color_ = node_->create_publisher<sensor_msgs::msg::Image>(
+          "~/color/image_raw", qos);
+    if (cfg_.publish_depth)
+      pub_depth_ = node_->create_publisher<sensor_msgs::msg::Image>(
+          "~/depth/image_raw", qos);
+    if (cfg_.publish_overlay)
+      pub_overlay_ = node_->create_publisher<sensor_msgs::msg::Image>(
+          "~/overlay/image", qos);
+    if (cfg_.publish_keypoints) {
+      pub_keypoints_ = node_->create_publisher<sensor_msgs::msg::Image>(
+          "~/keypoints/image", qos);
+      orb_ = cv::ORB::create(500);
+    }
     pub_marker_est_ = node_->create_publisher<visualization_msgs::msg::Marker>("~/marker_est", 1);
-    pub_marker_gt_ = node_->create_publisher<visualization_msgs::msg::Marker>("~/marker_gt", 1);
+    if (cfg_.publish_gt)
+      pub_marker_gt_ = node_->create_publisher<visualization_msgs::msg::Marker>(
+          "~/marker_gt", 1);
     tf_ = std::make_unique<tf2_ros::TransformBroadcaster>(node_);
-    orb_ = cv::ORB::create(500);
   }
 
   void Publish(const Snapshot &s) {
@@ -73,7 +85,7 @@ class RosPublisher {
       pub_color_->publish(*cv_bridge::CvImage(h, "bgr8", s.color).toImageMsg());
     if (cfg_.publish_depth && s.has_depth && !s.depth.empty())
       pub_depth_->publish(*cv_bridge::CvImage(h, "16UC1", s.depth).toImageMsg());
-    if (!s.overlay.empty())
+    if (cfg_.publish_overlay && !s.overlay.empty())
       pub_overlay_->publish(*cv_bridge::CvImage(h, "bgr8", s.overlay).toImageMsg());
     if (cfg_.publish_keypoints && !s.color.empty()) {
       std::vector<cv::KeyPoint> kp;
