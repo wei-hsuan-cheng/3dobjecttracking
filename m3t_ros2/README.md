@@ -128,9 +128,12 @@ For an external config, relative `geometry_path` is resolved relative to that YA
 | `~/keypoints/image` | texture-modality debug image |
 | `~/marker_est` | estimated mesh marker |
 | TF `world_frame -> object_est` | estimated object pose |
+| `/m3t/pose_gt` | image-aligned GT pose from a development source |
+| `/m3t/marker_gt` | gray GT mesh marker from a development source |
+| TF `world_frame -> object_gt` | GT pose refreshed at `gt_publish_rate` |
 | `~/redetect` | `std_srvs/srv/Trigger` |
 
-GT topics/TF exist only when the chosen development source publishes them.
+GT topics/TF exist only when the chosen development source publishes them. The default `gt_publish_rate` is 60 Hz and is configured in `config/m3t.yaml`.
 
 ## Automated smoke tests
 

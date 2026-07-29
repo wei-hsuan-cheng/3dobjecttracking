@@ -8,13 +8,9 @@
 #include <rclcpp/rclcpp.hpp>
 
 #include <cv_bridge/cv_bridge.h>
-#include <tf2_ros/transform_broadcaster.h>
 
-#include <geometry_msgs/msg/pose_stamped.hpp>
-#include <geometry_msgs/msg/transform_stamped.hpp>
 #include <sensor_msgs/msg/camera_info.hpp>
 #include <sensor_msgs/msg/image.hpp>
-#include <visualization_msgs/msg/marker.hpp>
 
 #include <Eigen/Geometry>
 #include <algorithm>
@@ -33,22 +29,9 @@
 #include <m3t/renderer_geometry.h>
 
 #include "m3t_ros2/body_factory.hpp"
+#include "m3t_ros2/ground_truth_publisher.hpp"
 
 namespace {
-
-geometry_msgs::msg::Pose ToPose(const m3t::Transform3fA &transform) {
-  geometry_msgs::msg::Pose pose;
-  const Eigen::Vector3f translation = transform.translation();
-  const Eigen::Quaternionf rotation{transform.rotation()};
-  pose.position.x = translation.x();
-  pose.position.y = translation.y();
-  pose.position.z = translation.z();
-  pose.orientation.x = rotation.x();
-  pose.orientation.y = rotation.y();
-  pose.orientation.z = rotation.z();
-  pose.orientation.w = rotation.w();
-  return pose;
-}
 
 sensor_msgs::msg::CameraInfo MakeCameraInfo(const m3t::Intrinsics &intrinsics,
                                             const std::string &frame_id) {
@@ -71,6 +54,8 @@ class SyntheticSourceNode : public rclcpp::Node {
  public:
   SyntheticSourceNode() : Node{"m3t_synthetic_source"}, rng_{12345} {
     publish_rate_ = declare_parameter<double>("publish_rate", 30.0);
+    gt_publish_rate_ =
+        declare_parameter<double>("gt_publish_rate", 60.0);
     n_frames_ = declare_parameter<int>("n_frames", 240);
     loop_ = declare_parameter<bool>("loop", true);
     depth_noise_ = declare_parameter<double>("depth_noise", 0.0);
@@ -114,10 +99,16 @@ class SyntheticSourceNode : public rclcpp::Node {
         "color_info_topic", "/camera/color/camera_info");
     const auto depth_info_topic = declare_parameter<std::string>(
         "depth_info_topic", "/camera/depth/camera_info");
+    const auto gt_pose_topic = declare_parameter<std::string>(
+        "gt_pose_topic", "/m3t/pose_gt");
+    const auto gt_marker_topic = declare_parameter<std::string>(
+        "gt_marker_topic", "/m3t/marker_gt");
 
-    if (publish_rate_ <= 0.0 || n_frames_ <= 1 || depth_scale_ <= 0.0) {
+    if (publish_rate_ <= 0.0 || gt_publish_rate_ <= 0.0 ||
+        n_frames_ <= 1 || depth_scale_ <= 0.0) {
       throw std::runtime_error(
-          "publish_rate and depth_scale must be positive; n_frames must be > 1");
+          "publish rates and depth_scale must be positive; "
+          "n_frames must be > 1");
     }
 
     auto qos = rclcpp::SensorDataQoS();
@@ -129,25 +120,30 @@ class SyntheticSourceNode : public rclcpp::Node {
         create_publisher<sensor_msgs::msg::CameraInfo>(color_info_topic, qos);
     pub_depth_info_ =
         create_publisher<sensor_msgs::msg::CameraInfo>(depth_info_topic, qos);
-    pub_gt_pose_ =
-        create_publisher<geometry_msgs::msg::PoseStamped>("~/pose_gt", 10);
-    pub_gt_marker_ =
-        create_publisher<visualization_msgs::msg::Marker>("~/marker_gt", 1);
-    tf_broadcaster_ =
-        std::make_unique<tf2_ros::TransformBroadcaster>(*this);
-
     SetUpRenderer();
     color_info_ = MakeCameraInfo(intrinsics_, camera_frame_);
     depth_info_ = MakeCameraInfo(intrinsics_, camera_frame_);
+
+    m3t_ros2::GroundTruthPublisherConfig gt_config;
+    gt_config.world_frame = world_frame_;
+    gt_config.gt_frame = gt_frame_;
+    gt_config.pose_topic = gt_pose_topic;
+    gt_config.marker_topic = gt_marker_topic;
+    gt_config.mesh_resource = mesh_resource_;
+    gt_config.mesh_scale = static_cast<float>(mesh_scale_);
+    gt_config.publish_rate = gt_publish_rate_;
+    gt_config.geometry2body_pose = body_->geometry2body_pose();
+    gt_publisher_ =
+        std::make_unique<m3t_ros2::GroundTruthPublisher>(this, gt_config);
 
     const auto period = std::chrono::duration_cast<std::chrono::nanoseconds>(
         std::chrono::duration<double>{1.0 / publish_rate_});
     timer_ = create_wall_timer(period, [this]() { PublishFrame(); });
     RCLCPP_INFO(get_logger(),
                 "online synthetic RGB-D | body=%s frames=%d rate=%.1f Hz "
-                "depth_noise=%.4f distortion=%.3f",
-                body_->name().c_str(), n_frames_, publish_rate_, depth_noise_,
-                distortion_);
+                "GT=%.1f Hz depth_noise=%.4f distortion=%.3f",
+                body_->name().c_str(), n_frames_, publish_rate_,
+                gt_publish_rate_, depth_noise_, distortion_);
   }
 
  private:
@@ -229,40 +225,6 @@ class SyntheticSourceNode : public rclcpp::Node {
     return pose;
   }
 
-  void PublishGroundTruth(const rclcpp::Time &stamp,
-                          const m3t::Transform3fA &body2world) {
-    geometry_msgs::msg::PoseStamped pose;
-    pose.header.stamp = stamp;
-    pose.header.frame_id = world_frame_;
-    pose.pose = ToPose(body2world);
-    pub_gt_pose_->publish(pose);
-
-    geometry_msgs::msg::TransformStamped transform;
-    transform.header = pose.header;
-    transform.child_frame_id = gt_frame_;
-    transform.transform.translation.x = pose.pose.position.x;
-    transform.transform.translation.y = pose.pose.position.y;
-    transform.transform.translation.z = pose.pose.position.z;
-    transform.transform.rotation = pose.pose.orientation;
-    tf_broadcaster_->sendTransform(transform);
-
-    visualization_msgs::msg::Marker marker;
-    marker.header = pose.header;
-    marker.ns = "gt";
-    marker.id = 0;
-    marker.type = visualization_msgs::msg::Marker::MESH_RESOURCE;
-    marker.action = visualization_msgs::msg::Marker::ADD;
-    marker.mesh_resource = mesh_resource_;
-    marker.mesh_use_embedded_materials = mesh_embedded_;
-    marker.pose = ToPose(body2world * body_->geometry2body_pose());
-    marker.scale.x = marker.scale.y = marker.scale.z = mesh_scale_;
-    marker.color.r = 0.1f;
-    marker.color.g = 0.9f;
-    marker.color.b = 0.1f;
-    marker.color.a = 0.5f;
-    pub_gt_marker_->publish(marker);
-  }
-
   void PublishFrame() {
     if (frame_index_ >= n_frames_) {
       if (loop_) {
@@ -323,7 +285,7 @@ class SyntheticSourceNode : public rclcpp::Node {
     // Publish GT and depth before color.  The tracker treats color as the frame
     // trigger, so this ordering also gives non-synchronizing subscribers the
     // newest depth/pose before the corresponding color image arrives.
-    PublishGroundTruth(stamp, pose);
+    gt_publisher_->Update(stamp, pose);
     pub_color_info_->publish(color_info_);
     pub_depth_info_->publish(depth_info_);
     pub_depth_->publish(
@@ -338,6 +300,7 @@ class SyntheticSourceNode : public rclcpp::Node {
   std::string gt_frame_;
   std::string mesh_resource_;
   double publish_rate_{30.0};
+  double gt_publish_rate_{60.0};
   int n_frames_{240};
   bool loop_{true};
   double depth_noise_{0.0};
@@ -367,9 +330,7 @@ class SyntheticSourceNode : public rclcpp::Node {
   rclcpp::Publisher<sensor_msgs::msg::Image>::SharedPtr pub_depth_;
   rclcpp::Publisher<sensor_msgs::msg::CameraInfo>::SharedPtr pub_color_info_;
   rclcpp::Publisher<sensor_msgs::msg::CameraInfo>::SharedPtr pub_depth_info_;
-  rclcpp::Publisher<geometry_msgs::msg::PoseStamped>::SharedPtr pub_gt_pose_;
-  rclcpp::Publisher<visualization_msgs::msg::Marker>::SharedPtr pub_gt_marker_;
-  std::unique_ptr<tf2_ros::TransformBroadcaster> tf_broadcaster_;
+  std::unique_ptr<m3t_ros2::GroundTruthPublisher> gt_publisher_;
   rclcpp::TimerBase::SharedPtr timer_;
 };
 

@@ -4,13 +4,9 @@
 #include <rclcpp/rclcpp.hpp>
 
 #include <cv_bridge/cv_bridge.h>
-#include <tf2_ros/transform_broadcaster.h>
 
-#include <geometry_msgs/msg/pose_stamped.hpp>
-#include <geometry_msgs/msg/transform_stamped.hpp>
 #include <sensor_msgs/msg/camera_info.hpp>
 #include <sensor_msgs/msg/image.hpp>
-#include <visualization_msgs/msg/marker.hpp>
 
 #include <algorithm>
 #include <chrono>
@@ -26,24 +22,11 @@
 #include <m3t/body.h>
 
 #include "m3t_ros2/body_factory.hpp"
+#include "m3t_ros2/ground_truth_publisher.hpp"
 
 namespace fs = std::filesystem;
 
 namespace {
-
-geometry_msgs::msg::Pose ToPose(const m3t::Transform3fA &transform) {
-  geometry_msgs::msg::Pose pose;
-  const Eigen::Vector3f translation = transform.translation();
-  const Eigen::Quaternionf rotation{transform.rotation()};
-  pose.position.x = translation.x();
-  pose.position.y = translation.y();
-  pose.position.z = translation.z();
-  pose.orientation.x = rotation.x();
-  pose.orientation.y = rotation.y();
-  pose.orientation.z = rotation.z();
-  pose.orientation.w = rotation.w();
-  return pose;
-}
 
 std::string FormatFrameName(const std::string &pattern, int index) {
   std::vector<char> buffer(pattern.size() + 64, '\0');
@@ -105,6 +88,8 @@ class ImagePublisherNode : public rclcpp::Node {
     frame_index_ = start_index_;
     n_frames_ = declare_parameter<int>("n_frames", 0);
     publish_rate_ = declare_parameter<double>("publish_rate", 30.0);
+    gt_publish_rate_ =
+        declare_parameter<double>("gt_publish_rate", 60.0);
     loop_ = declare_parameter<bool>("loop", true);
     publish_gt_ = declare_parameter<bool>("publish_gt", true);
     world_frame_ = declare_parameter<std::string>("world_frame", "camera");
@@ -131,14 +116,20 @@ class ImagePublisherNode : public rclcpp::Node {
         "color_info_topic", "/camera/color/camera_info");
     const auto depth_info_topic = declare_parameter<std::string>(
         "depth_info_topic", "/camera/depth/camera_info");
+    const auto gt_pose_topic = declare_parameter<std::string>(
+        "gt_pose_topic", "/m3t/pose_gt");
+    const auto gt_marker_topic = declare_parameter<std::string>(
+        "gt_marker_topic", "/m3t/marker_gt");
 
     if (sequence_dir_.empty() || !fs::is_directory(sequence_dir_)) {
       throw std::runtime_error(
           "sequence_dir must be an existing read-only image directory");
     }
-    if (publish_rate_ <= 0.0 || start_index_ < 0 || n_frames_ < 0) {
+    if (publish_rate_ <= 0.0 || gt_publish_rate_ <= 0.0 ||
+        start_index_ < 0 || n_frames_ < 0) {
       throw std::runtime_error(
-          "publish_rate must be positive; frame indices must be non-negative");
+          "publish rates must be positive; "
+          "frame indices must be non-negative");
     }
 
     body_ = m3t_ros2::DeclareAndCreateBody(this);
@@ -157,19 +148,28 @@ class ImagePublisherNode : public rclcpp::Node {
         create_publisher<sensor_msgs::msg::CameraInfo>(color_info_topic, qos);
     pub_depth_info_ =
         create_publisher<sensor_msgs::msg::CameraInfo>(depth_info_topic, qos);
-    pub_gt_pose_ =
-        create_publisher<geometry_msgs::msg::PoseStamped>("~/pose_gt", 10);
-    pub_gt_marker_ =
-        create_publisher<visualization_msgs::msg::Marker>("~/marker_gt", 1);
-    tf_broadcaster_ =
-        std::make_unique<tf2_ros::TransformBroadcaster>(*this);
+    if (publish_gt_) {
+      m3t_ros2::GroundTruthPublisherConfig gt_config;
+      gt_config.world_frame = world_frame_;
+      gt_config.gt_frame = gt_frame_;
+      gt_config.pose_topic = gt_pose_topic;
+      gt_config.marker_topic = gt_marker_topic;
+      gt_config.mesh_resource = mesh_resource_;
+      gt_config.mesh_scale = static_cast<float>(mesh_scale_);
+      gt_config.publish_rate = gt_publish_rate_;
+      gt_config.geometry2body_pose = body_->geometry2body_pose();
+      gt_publisher_ =
+          std::make_unique<m3t_ros2::GroundTruthPublisher>(this, gt_config);
+    }
 
     const auto period = std::chrono::duration_cast<std::chrono::nanoseconds>(
         std::chrono::duration<double>{1.0 / publish_rate_});
     timer_ = create_wall_timer(period, [this]() { PublishNextFrame(); });
     RCLCPP_INFO(get_logger(),
-                "read-only sequence source: %s at %.1f Hz; GT poses=%zu",
-                sequence_dir_.c_str(), publish_rate_, gt_poses_.size());
+                "read-only sequence source: %s at %.1f Hz; "
+                "GT poses=%zu GT rate=%.1f Hz",
+                sequence_dir_.c_str(), publish_rate_, gt_poses_.size(),
+                gt_publish_rate_);
   }
 
  private:
@@ -187,40 +187,6 @@ class ImagePublisherNode : public rclcpp::Node {
                                depth_path.string());
     }
     return true;
-  }
-
-  void PublishGroundTruth(const rclcpp::Time &stamp,
-                          const m3t::Transform3fA &body2world) {
-    geometry_msgs::msg::PoseStamped pose;
-    pose.header.stamp = stamp;
-    pose.header.frame_id = world_frame_;
-    pose.pose = ToPose(body2world);
-    pub_gt_pose_->publish(pose);
-
-    geometry_msgs::msg::TransformStamped transform;
-    transform.header = pose.header;
-    transform.child_frame_id = gt_frame_;
-    transform.transform.translation.x = pose.pose.position.x;
-    transform.transform.translation.y = pose.pose.position.y;
-    transform.transform.translation.z = pose.pose.position.z;
-    transform.transform.rotation = pose.pose.orientation;
-    tf_broadcaster_->sendTransform(transform);
-
-    visualization_msgs::msg::Marker marker;
-    marker.header = pose.header;
-    marker.ns = "gt";
-    marker.id = 0;
-    marker.type = visualization_msgs::msg::Marker::MESH_RESOURCE;
-    marker.action = visualization_msgs::msg::Marker::ADD;
-    marker.mesh_resource = mesh_resource_;
-    marker.mesh_use_embedded_materials = mesh_embedded_;
-    marker.pose = ToPose(body2world * body_->geometry2body_pose());
-    marker.scale.x = marker.scale.y = marker.scale.z = mesh_scale_;
-    marker.color.r = 0.1f;
-    marker.color.g = 0.9f;
-    marker.color.b = 0.1f;
-    marker.color.a = 0.5f;
-    pub_gt_marker_->publish(marker);
   }
 
   void PublishNextFrame() {
@@ -260,7 +226,7 @@ class ImagePublisherNode : public rclcpp::Node {
 
     if (publish_gt_ && relative_index >= 0 &&
         static_cast<size_t>(relative_index) < gt_poses_.size()) {
-      PublishGroundTruth(stamp, gt_poses_[relative_index]);
+      gt_publisher_->Update(stamp, gt_poses_[relative_index]);
     }
     pub_color_info_->publish(color_info_);
     if (!depth.empty()) {
@@ -285,6 +251,7 @@ class ImagePublisherNode : public rclcpp::Node {
   int frame_index_{0};
   int n_frames_{0};
   double publish_rate_{30.0};
+  double gt_publish_rate_{60.0};
   bool loop_{true};
   bool publish_gt_{true};
   double mesh_scale_{1.0};
@@ -297,9 +264,7 @@ class ImagePublisherNode : public rclcpp::Node {
   rclcpp::Publisher<sensor_msgs::msg::Image>::SharedPtr pub_depth_;
   rclcpp::Publisher<sensor_msgs::msg::CameraInfo>::SharedPtr pub_color_info_;
   rclcpp::Publisher<sensor_msgs::msg::CameraInfo>::SharedPtr pub_depth_info_;
-  rclcpp::Publisher<geometry_msgs::msg::PoseStamped>::SharedPtr pub_gt_pose_;
-  rclcpp::Publisher<visualization_msgs::msg::Marker>::SharedPtr pub_gt_marker_;
-  std::unique_ptr<tf2_ros::TransformBroadcaster> tf_broadcaster_;
+  std::unique_ptr<m3t_ros2::GroundTruthPublisher> gt_publisher_;
   rclcpp::TimerBase::SharedPtr timer_;
 };
 

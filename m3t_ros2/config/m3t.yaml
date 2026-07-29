@@ -21,6 +21,7 @@ m3t_tracker_node:
 m3t_synthetic_source:
   ros__parameters:
     publish_rate: 30.0
+    gt_publish_rate: 60.0
     n_frames: 240
     loop: true
     depth_noise: 0.002
@@ -31,6 +32,8 @@ m3t_synthetic_source:
     world_frame: camera
     camera_frame: camera
     gt_frame: object_gt
+    gt_pose_topic: /m3t/pose_gt
+    gt_marker_topic: /m3t/marker_gt
     camera_intrinsics: [698.128, 698.617, 478.459, 274.426, 960.0, 540.0]
     color_topic: /camera/color/image_raw
     depth_topic: /camera/depth/image_raw
@@ -40,10 +43,14 @@ m3t_synthetic_source:
 m3t_image_publisher:
   ros__parameters:
     publish_rate: 30.0
+    gt_publish_rate: 60.0
     loop: true
     publish_gt: true
     world_frame: camera
     camera_frame: camera
+    gt_frame: object_gt
+    gt_pose_topic: /m3t/pose_gt
+    gt_marker_topic: /m3t/marker_gt
     color_pattern: "frame%04d.png"
     depth_pattern: "depth%04d.png"
     start_index: 0

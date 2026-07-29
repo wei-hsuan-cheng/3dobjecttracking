@@ -87,7 +87,7 @@ class RosPublisher {
     PublishMarker(pub_marker_est_, stamp, "est", s.geometry2world_est, 1.0f, 0.1f, 0.1f, 0.9f);
     if (cfg_.publish_gt && s.has_gt) {
       BroadcastTf(stamp, "object_gt", s.body2world_gt);
-      PublishMarker(pub_marker_gt_, stamp, "gt", s.geometry2world_gt, 0.1f, 0.9f, 0.1f, 0.5f);
+      PublishMarker(pub_marker_gt_, stamp, "gt", s.geometry2world_gt, 0.55f, 0.55f, 0.55f, 0.7f);
     }
   }
 
