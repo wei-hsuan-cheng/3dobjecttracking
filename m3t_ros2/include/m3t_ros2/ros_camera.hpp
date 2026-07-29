@@ -32,15 +32,28 @@ class RosColorCamera : public m3t::ColorCamera {
     { std::lock_guard<std::mutex> lk{m_}; latest_ = img; }
     seq_.fetch_add(1);
   }
-  void SetIntrinsics(const m3t::Intrinsics &in) { intrinsics_ = in; }
+  // Intrinsics are latched from the first CameraInfo message. Camera drivers
+  // normally republish identical calibration; latching avoids writing M3T's
+  // camera state while the tracking worker is reading it.
+  void SetIntrinsics(const m3t::Intrinsics &in) {
+    if (has_intrinsics_.load(std::memory_order_acquire)) return;
+    std::lock_guard<std::mutex> lk{intrinsics_mutex_};
+    if (has_intrinsics_.load(std::memory_order_relaxed)) return;
+    intrinsics_ = in;
+    has_intrinsics_.store(true, std::memory_order_release);
+  }
   bool HasImage() { std::lock_guard<std::mutex> lk{m_}; return !latest_.empty(); }
-  bool HasIntrinsics() const { return intrinsics_.width > 0; }
+  bool HasIntrinsics() const {
+    return has_intrinsics_.load(std::memory_order_acquire);
+  }
   uint64_t seq() const { return seq_.load(); }  // increments on each new frame
 
  private:
   std::mutex m_;
+  std::mutex intrinsics_mutex_;
   cv::Mat latest_;
   std::atomic<uint64_t> seq_{0};
+  std::atomic<bool> has_intrinsics_{false};
 };
 
 class RosDepthCamera : public m3t::DepthCamera {
@@ -54,14 +67,24 @@ class RosDepthCamera : public m3t::DepthCamera {
     return true;
   }
   void SetLatest(const cv::Mat &img) { std::lock_guard<std::mutex> lk{m_}; latest_ = img; }
-  void SetIntrinsics(const m3t::Intrinsics &in) { intrinsics_ = in; }
+  void SetIntrinsics(const m3t::Intrinsics &in) {
+    if (has_intrinsics_.load(std::memory_order_acquire)) return;
+    std::lock_guard<std::mutex> lk{intrinsics_mutex_};
+    if (has_intrinsics_.load(std::memory_order_relaxed)) return;
+    intrinsics_ = in;
+    has_intrinsics_.store(true, std::memory_order_release);
+  }
   void SetDepthScale(float s) { depth_scale_ = s; }
   bool HasImage() { std::lock_guard<std::mutex> lk{m_}; return !latest_.empty(); }
-  bool HasIntrinsics() const { return intrinsics_.width > 0; }
+  bool HasIntrinsics() const {
+    return has_intrinsics_.load(std::memory_order_acquire);
+  }
 
  private:
   std::mutex m_;
+  std::mutex intrinsics_mutex_;
   cv::Mat latest_;
+  std::atomic<bool> has_intrinsics_{false};
 };
 
 }  // namespace m3t_ros2

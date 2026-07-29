@@ -20,8 +20,11 @@
 #include <sensor_msgs/msg/image.hpp>
 #include <std_srvs/srv/trigger.hpp>
 
+#include <algorithm>
 #include <atomic>
 #include <chrono>
+#include <cstdint>
+#include <cstdlib>
 #include <filesystem>
 #include <memory>
 #include <mutex>
@@ -46,6 +49,8 @@
 
 #include "m3t_ros2/ros_camera.hpp"
 #include "m3t_ros2/ros_publisher.hpp"
+#include "m3t_ros2/body_factory.hpp"
+#include "m3t_ros2/runtime_paths.hpp"
 
 namespace fs = std::filesystem;
 using clk = std::chrono::steady_clock;
@@ -58,6 +63,9 @@ static m3t::Intrinsics FromInfo(const sensor_msgs::msg::CameraInfo &i) {
   return {static_cast<float>(i.k[0]), static_cast<float>(i.k[4]),
           static_cast<float>(i.k[2]), static_cast<float>(i.k[5]),
           static_cast<int>(i.width), static_cast<int>(i.height)};
+}
+static bool HasValidIntrinsics(const sensor_msgs::msg::CameraInfo &i) {
+  return i.width > 0 && i.height > 0 && i.k[0] > 0.0 && i.k[4] > 0.0;
 }
 static m3t::Transform3fA TfToTransform(const geometry_msgs::msg::Transform &tr) {
   m3t::Transform3fA t{m3t::Transform3fA::Identity()};
@@ -88,9 +96,15 @@ int main(int argc, char **argv) {
   rclcpp::init(argc, argv);
   auto node = std::make_shared<rclcpp::Node>("m3t_tracker_node");
 
-  const auto body_metafile = node->declare_parameter<std::string>("body_metafile", "");
-  const auto modalities = node->declare_parameter<std::string>("modalities", "region");
-  auto temp_dir = node->declare_parameter<std::string>("temp_dir", "");
+  const auto modalities = node->declare_parameter<std::string>(
+      "modalities", "region,depth,texture");
+  auto model_cache_dir =
+      node->declare_parameter<std::string>("model_cache_dir", "");
+  const auto initial_pose_values =
+      node->declare_parameter<std::vector<double>>(
+          "initial_pose",
+          {1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0,
+           0.0, 0.0, 1.0, 0.5, 0.0, 0.0, 0.0, 1.0});
   const double track_rate = node->declare_parameter<double>("track_rate", 0.0);
   const double publish_rate = node->declare_parameter<double>("publish_rate", 30.0);
   const double log_period = node->declare_parameter<double>("log_period", 2.0);
@@ -98,6 +112,8 @@ int main(int argc, char **argv) {
   // false = free-run, re-solving the latest frame (shows compute headroom, dilutes solve time)
   const bool event_driven = node->declare_parameter<bool>("event_driven", true);
   const float depth_scale = node->declare_parameter<double>("depth_scale", 0.001);
+  const double sync_tolerance =
+      node->declare_parameter<double>("sync_tolerance", 0.02);
   const auto color_topic = node->declare_parameter<std::string>("color_topic", "/camera/color/image_raw");
   const auto depth_topic = node->declare_parameter<std::string>("depth_topic", "/camera/depth/image_raw");
   const auto color_info_topic = node->declare_parameter<std::string>("color_info_topic", "/camera/color/camera_info");
@@ -105,8 +121,7 @@ int main(int argc, char **argv) {
   const auto gt_frame = node->declare_parameter<std::string>("gt_frame", "object_gt");
   const double lost_threshold = node->declare_parameter<double>("lost_threshold", 0.05);  // m
   // true  = seed the initial pose from the (image-aligned) GT/detector pose topic.
-  // false = seed from a fixed static_detector.yaml (real cameras: a known start
-  //         pose or a real detector publishing on init_pose_topic).
+  // false = seed from the initial_pose ROS parameter in the object YAML.
   const bool use_gt_initial_pose = node->declare_parameter<bool>("use_gt_initial_pose", true);
   const bool publish_overlay = node->declare_parameter<bool>("publish_overlay", true);
 
@@ -120,11 +135,41 @@ int main(int argc, char **argv) {
   cfg.publish_depth = false;
   cfg.publish_gt = false;
 
-  if (body_metafile.empty()) { RCLCPP_FATAL(node->get_logger(), "body_metafile required"); return 1; }
-  if (temp_dir.empty()) temp_dir = fs::path{body_metafile}.parent_path().string();
+  std::shared_ptr<m3t::Body> body;
+  m3t::Transform3fA initial_pose;
+  try {
+    body = m3t_ros2::DeclareAndCreateBody(node.get());
+    initial_pose =
+        m3t_ros2::TransformFromRowMajor(initial_pose_values, "initial_pose");
+  } catch (const std::exception &error) {
+    RCLCPP_FATAL(node->get_logger(), "object parameter error: %s",
+                 error.what());
+    return 1;
+  }
+  const std::string object_name = body->name();
+  if (model_cache_dir.empty()) {
+    model_cache_dir =
+        (m3t_ros2::DefaultRuntimeRoot() / "cache" /
+         m3t_ros2::SanitizePathComponent(object_name))
+            .string();
+  }
+  std::string cache_error;
+  if (!m3t_ros2::EnsureWritableDirectory(model_cache_dir, &cache_error)) {
+    RCLCPP_FATAL(node->get_logger(), "model cache error: %s",
+                 cache_error.c_str());
+    return 1;
+  }
   const bool use_region = HasModality(modalities, "region");
   const bool use_depth = HasModality(modalities, "depth");
   const bool use_texture = HasModality(modalities, "texture");
+  if (!use_region && !use_depth && !use_texture) {
+    RCLCPP_FATAL(node->get_logger(),
+                 "modalities must contain region, depth, and/or texture; got '%s'",
+                 modalities.c_str());
+    return 1;
+  }
+  RCLCPP_INFO(node->get_logger(), "model cache: %s",
+              fs::absolute(model_cache_dir).lexically_normal().c_str());
 
   auto color_camera = std::make_shared<m3t_ros2::RosColorCamera>("color_camera");
   color_camera->SetUp();  // overlay renderer uses it even when no modality does
@@ -136,12 +181,54 @@ int main(int argc, char **argv) {
   }
 
   auto qos = rclcpp::SensorDataQoS();
+  std::mutex input_sync_mutex;
+  cv::Mat pending_color;
+  cv::Mat pending_depth;
+  int64_t pending_color_stamp = 0;
+  int64_t pending_depth_stamp = 0;
+  bool has_pending_color = false;
+  bool has_pending_depth = false;
+  const int64_t sync_tolerance_ns =
+      static_cast<int64_t>(std::max(0.0, sync_tolerance) * 1.0e9);
+  // Called with input_sync_mutex held.  Committing depth first and color last
+  // makes the color sequence counter represent a complete RGB-D frame.
+  auto commit_synchronized_frame = [&]() {
+    if (!has_pending_color || !has_pending_depth) return;
+    const int64_t delta =
+        std::llabs(pending_color_stamp - pending_depth_stamp);
+    if (delta <= sync_tolerance_ns) {
+      depth_camera->SetLatest(pending_depth);
+      color_camera->SetLatest(pending_color);
+      has_pending_color = false;
+      has_pending_depth = false;
+    } else if (pending_color_stamp < pending_depth_stamp) {
+      has_pending_color = false;
+    } else {
+      has_pending_depth = false;
+    }
+  };
   auto sub_color = node->create_subscription<sensor_msgs::msg::Image>(
       color_topic, qos, [&](sensor_msgs::msg::Image::ConstSharedPtr m) {
-        color_camera->SetLatest(cv_bridge::toCvCopy(m, "bgr8")->image);
+        cv::Mat image = cv_bridge::toCvCopy(m, "bgr8")->image;
+        if (!use_depth) {
+          color_camera->SetLatest(image);
+          return;
+        }
+        std::lock_guard<std::mutex> lock{input_sync_mutex};
+        pending_color = image;
+        pending_color_stamp = rclcpp::Time{m->header.stamp}.nanoseconds();
+        has_pending_color = true;
+        commit_synchronized_frame();
       });
   auto sub_cinfo = node->create_subscription<sensor_msgs::msg::CameraInfo>(
       color_info_topic, qos, [&](sensor_msgs::msg::CameraInfo::ConstSharedPtr m) {
+        if (!HasValidIntrinsics(*m)) {
+          RCLCPP_WARN_THROTTLE(
+              node->get_logger(), *node->get_clock(), 5000,
+              "ignoring invalid RGB CameraInfo (positive width, height, fx, "
+              "and fy are required)");
+          return;
+        }
         color_camera->SetIntrinsics(FromInfo(*m));
       });
   rclcpp::Subscription<sensor_msgs::msg::Image>::SharedPtr sub_depth;
@@ -149,10 +236,21 @@ int main(int argc, char **argv) {
   if (use_depth) {
     sub_depth = node->create_subscription<sensor_msgs::msg::Image>(
         depth_topic, qos, [&](sensor_msgs::msg::Image::ConstSharedPtr m) {
-          depth_camera->SetLatest(cv_bridge::toCvCopy(m, "16UC1")->image);
+          std::lock_guard<std::mutex> lock{input_sync_mutex};
+          pending_depth = cv_bridge::toCvCopy(m, "16UC1")->image;
+          pending_depth_stamp = rclcpp::Time{m->header.stamp}.nanoseconds();
+          has_pending_depth = true;
+          commit_synchronized_frame();
         });
     sub_dinfo = node->create_subscription<sensor_msgs::msg::CameraInfo>(
         depth_info_topic, qos, [&](sensor_msgs::msg::CameraInfo::ConstSharedPtr m) {
+          if (!HasValidIntrinsics(*m)) {
+            RCLCPP_WARN_THROTTLE(
+                node->get_logger(), *node->get_clock(), 5000,
+                "ignoring invalid depth CameraInfo (positive width, height, "
+                "fx, and fy are required)");
+            return;
+          }
           depth_camera->SetIntrinsics(FromInfo(*m));
         });
   }
@@ -169,14 +267,17 @@ int main(int argc, char **argv) {
     } catch (const tf2::TransformException &) { return false; }
   };
 
-  auto body = std::make_shared<m3t::Body>("body", body_metafile);
   auto link = std::make_shared<m3t::Link>("link", body);
   if (use_region) {
-    auto rm = std::make_shared<m3t::RegionModel>("region_model", body, fs::path{temp_dir} / "region_model.bin");
+    auto rm = std::make_shared<m3t::RegionModel>(
+        "region_model", body,
+        fs::path{model_cache_dir} / "region_model.bin");
     link->AddModality(std::make_shared<m3t::RegionModality>("region_modality", body, color_camera, rm));
   }
   if (use_depth) {
-    auto dm = std::make_shared<m3t::DepthModel>("depth_model", body, fs::path{temp_dir} / "depth_model.bin");
+    auto dm = std::make_shared<m3t::DepthModel>(
+        "depth_model", body,
+        fs::path{model_cache_dir} / "depth_model.bin");
     link->AddModality(std::make_shared<m3t::DepthModality>("depth_modality", body, depth_camera, dm));
   }
   if (use_texture) {
@@ -190,13 +291,13 @@ int main(int argc, char **argv) {
   auto tracker = std::make_shared<m3t::Tracker>("tracker", 5, 2, false, true);
   tracker->AddOptimizer(optimizer);
   // use_gt: seed pose is set at runtime from the pose topic (image-aligned).
-  // else:  fixed pose from static_detector.yaml.
+  // else: fixed pose from the initial_pose ROS parameter.
   std::shared_ptr<m3t::StaticDetector> detector =
       use_gt_initial_pose
           ? std::make_shared<m3t::StaticDetector>("detector", optimizer,
                                                   m3t::Transform3fA::Identity(), true)
-          : std::make_shared<m3t::StaticDetector>(
-                "detector", fs::path{temp_dir} / "static_detector.yaml", optimizer);
+          : std::make_shared<m3t::StaticDetector>("detector", optimizer,
+                                                  initial_pose, true);
   tracker->AddDetector(detector);
 
   // Service to (re-)initialize from the latest pose (e.g. after a loss or a loop).
@@ -212,8 +313,21 @@ int main(int argc, char **argv) {
   auto overlay_renderer = std::make_shared<m3t::FullNormalRenderer>(
       "overlay_renderer", rg_overlay, color_camera, 0.01f, 10.0f);
 
-  // Wait for the first frames + intrinsics (+ init pose if seeding from GT).
-  RCLCPP_INFO(node->get_logger(), "waiting for images on %s ...", color_topic.c_str());
+  // Camera calibration is intentionally not loaded from a tracker config file.
+  // A camera driver must publish CameraInfo, and setup stays blocked until both
+  // the pixels and matching intrinsics have arrived.
+  if (use_depth) {
+    RCLCPP_INFO(
+        node->get_logger(),
+        "waiting for RGB image + CameraInfo on %s and %s, and depth image + "
+        "CameraInfo on %s and %s ...",
+        color_topic.c_str(), color_info_topic.c_str(), depth_topic.c_str(),
+        depth_info_topic.c_str());
+  } else {
+    RCLCPP_INFO(node->get_logger(),
+                "waiting for RGB image + CameraInfo on %s and %s ...",
+                color_topic.c_str(), color_info_topic.c_str());
+  }
   m3t::Transform3fA gt_tmp;
   while (rclcpp::ok() &&
          !(color_camera->HasImage() && color_camera->HasIntrinsics() &&

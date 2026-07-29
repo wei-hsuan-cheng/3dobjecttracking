@@ -31,11 +31,13 @@ Visualization Manager:
       Enabled: true
       Frame Timeout: 15
       Frames:
-        All Enabled: true
+        All Enabled: false
         camera:
           Value: true
         object_est:
           Value: true
+        object_gt:
+          Value: false
       Marker Scale: 1
       Name: TF
       Show Arrows: true
@@ -44,6 +46,8 @@ Visualization Manager:
       Tree:
         camera:
           object_est:
+            {}
+          object_gt:
             {}
       Update Interval: 0
       Value: true
@@ -144,25 +148,25 @@ Visualization Manager:
   Views:
     Current:
       Class: rviz_default_plugins/Orbit
-      Distance: 1.8831878900527954
+      Distance: 1.3505479097366333
       Enable Stereo Rendering:
         Stereo Eye Separation: 0.05999999865889549
         Stereo Focal Distance: 1
         Swap Stereo Eyes: false
         Value: false
       Focal Point:
-        X: 0.0729970633983612
-        Y: 0.1228170171380043
-        Z: 0.3754410147666931
+        X: 0.006141699850559235
+        Y: 0.11103873699903488
+        Z: 0.23847748339176178
       Focal Shape Fixed Size: true
       Focal Shape Size: 0.05000000074505806
       Invert Z Axis: false
       Name: Current View
       Near Clip Distance: 0.009999999776482582
-      Pitch: 0.12020258605480194
+      Pitch: 0.16520260274410248
       Target Frame: <Fixed Frame>
       Value: Orbit (rviz_default_plugins)
-      Yaw: 5.350393772125244
+      Yaw: 5.385397911071777
     Saved: ~
 Window Geometry:
   Color:

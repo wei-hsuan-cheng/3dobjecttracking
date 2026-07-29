@@ -11,6 +11,7 @@ endif()
 # ROS 2 dependencies
 find_package(ament_cmake REQUIRED)
 find_package(rclcpp REQUIRED)
+find_package(std_msgs REQUIRED)
 find_package(sensor_msgs REQUIRED)
 find_package(geometry_msgs REQUIRED)
 find_package(tf2 REQUIRED)
@@ -32,7 +33,7 @@ find_package(OpenMP REQUIRED)
 find_package(M3T REQUIRED)
 
 set(ROS_DEPS
-  rclcpp sensor_msgs geometry_msgs tf2 tf2_ros tf2_eigen std_srvs
+  rclcpp std_msgs sensor_msgs geometry_msgs tf2 tf2_ros tf2_eigen std_srvs
   visualization_msgs cv_bridge image_transport)
 
 add_executable(m3t_tracker_node src/tracker_node.cpp)
@@ -45,8 +46,18 @@ target_include_directories(m3t_image_publisher_node PRIVATE include)
 ament_target_dependencies(m3t_image_publisher_node ${ROS_DEPS})
 target_link_libraries(m3t_image_publisher_node m3t)
 
-install(TARGETS m3t_tracker_node m3t_image_publisher_node
+add_executable(m3t_synthetic_source_node src/synthetic_source_node.cpp)
+target_include_directories(m3t_synthetic_source_node PRIVATE include)
+ament_target_dependencies(m3t_synthetic_source_node ${ROS_DEPS})
+target_link_libraries(m3t_synthetic_source_node m3t)
+
+install(TARGETS
+        m3t_tracker_node
+        m3t_image_publisher_node
+        m3t_synthetic_source_node
         DESTINATION lib/${PROJECT_NAME})
-install(DIRECTORY launch rviz DESTINATION share/${PROJECT_NAME})
+install(PROGRAMS scripts/m3t_smoke_test
+        DESTINATION lib/${PROJECT_NAME})
+install(DIRECTORY launch rviz config assets DESTINATION share/${PROJECT_NAME})
 
 ament_package()

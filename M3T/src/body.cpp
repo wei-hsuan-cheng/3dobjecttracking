@@ -121,6 +121,7 @@ const Transform3fA &Body::geometry2body_pose() const {
 uchar Body::get_id(IDType id_type) const {
   if (id_type == IDType::BODY) return body_id_;
   if (id_type == IDType::REGION) return region_id_;
+  return 0;
 }
 
 uchar Body::body_id() const { return body_id_; }

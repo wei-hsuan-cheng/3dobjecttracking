@@ -1,0 +1,21 @@
+/**:
+  ros__parameters:
+    object_name: box
+    geometry_path: "../../assets/box/model.obj"
+    geometry_unit_in_meter: 1.0
+    geometry_counterclockwise: true
+    geometry_enable_culling: false
+    geometry2body_pose: [
+      1.0, 0.0, 0.0, 0.0,
+      0.0, 1.0, 0.0, 0.0,
+      0.0, 0.0, 1.0, 0.0,
+      0.0, 0.0, 0.0, 1.0
+    ]
+    body_id: 100
+    region_id: 100
+    initial_pose: [
+      1.0, 0.0, 0.0, 0.0,
+      0.0, 1.0, 0.0, 0.0284408,
+      0.0, 0.0, 1.0, 0.284408,
+      0.0, 0.0, 0.0, 1.0
+    ]
