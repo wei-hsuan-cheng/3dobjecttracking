@@ -29,11 +29,11 @@ m3t_tracker_node:
 
 m3t_synthetic_source:
   ros__parameters:
-    publish_rate: 30.0
+    publish_rate: 60.0
     gt_publish_rate: 60.0
     n_frames: 240
     loop: true
-    depth_noise: 0.0
+    depth_noise: 0.002
     distortion: 0.0
     depth_scale: 0.001
     motion_mode: orbit
@@ -52,7 +52,7 @@ m3t_synthetic_source:
 
 m3t_image_publisher:
   ros__parameters:
-    publish_rate: 30.0
+    publish_rate: 60.0
     gt_publish_rate: 60.0
     loop: true
     publish_gt: true
