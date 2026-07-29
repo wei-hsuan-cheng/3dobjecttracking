@@ -76,6 +76,18 @@ Built-in objects are `triangle`, `box`, `cylinder`, and `mustard`. `modalities` 
 
 The tracker defaults to one update per fresh synchronized camera frame (`event_driven:=true`). The reported inverse solve time is compute capacity, not the rate of independent pose estimates: actual tracking rate is bounded by the camera source rate. `event_driven:=false` repeatedly optimizes the same frame and is only intended for short compute benchmarks; it can over-update stateful modalities and destabilize tracking.
 
+Per-frame refinement is configured under `m3t_tracker_node.ros__parameters` in `config/m3t.yaml`. The tracker runs at least `min_corr_iterations` and at most `max_corr_iterations`, with `n_update_iterations` pose updates per correspondence round. It stops early after both pose-change thresholds remain satisfied for `convergence_required_rounds` consecutive rounds. Set `adaptive_iterations: false` to always run `max_corr_iterations`.
+
+```yaml
+adaptive_iterations: true
+min_corr_iterations: 2
+max_corr_iterations: 7
+n_update_iterations: 2
+convergence_translation_threshold: 0.0001  # meter
+convergence_rotation_threshold_deg: 0.05
+convergence_required_rounds: 2
+```
+
 ## Run only the tracker with an external camera
 
 ```bash

@@ -189,6 +189,22 @@ int main(int argc, char **argv) {
   // false = benchmark mode that repeatedly solves the latest frame; this can
   // over-update stateful modalities and is not intended for normal tracking.
   const bool event_driven = node->declare_parameter<bool>("event_driven", true);
+  const bool adaptive_iterations =
+      node->declare_parameter<bool>("adaptive_iterations", true);
+  const int min_corr_iterations =
+      node->declare_parameter<int>("min_corr_iterations", 2);
+  const int max_corr_iterations =
+      node->declare_parameter<int>("max_corr_iterations", 7);
+  const int n_update_iterations =
+      node->declare_parameter<int>("n_update_iterations", 2);
+  const double convergence_translation_threshold =
+      node->declare_parameter<double>(
+          "convergence_translation_threshold", 0.0001);
+  const double convergence_rotation_threshold_deg =
+      node->declare_parameter<double>(
+          "convergence_rotation_threshold_deg", 0.05);
+  const int convergence_required_rounds =
+      node->declare_parameter<int>("convergence_required_rounds", 2);
   const auto image_outputs = node->declare_parameter<std::string>(
       "image_outputs", "none");
   const float depth_scale = node->declare_parameter<double>("depth_scale", 0.001);
@@ -205,6 +221,18 @@ int main(int argc, char **argv) {
   // true  = seed the initial pose from the (image-aligned) GT/detector pose topic.
   // false = seed from the initial_pose ROS parameter in the object YAML.
   const bool use_gt_initial_pose = node->declare_parameter<bool>("use_gt_initial_pose", true);
+  if (min_corr_iterations < 1 ||
+      max_corr_iterations < min_corr_iterations ||
+      n_update_iterations < 1 || convergence_required_rounds < 1 ||
+      convergence_translation_threshold < 0.0 ||
+      convergence_rotation_threshold_deg < 0.0) {
+    RCLCPP_FATAL(
+        node->get_logger(),
+        "invalid adaptive iteration parameters: require 1 <= min_corr <= "
+        "max_corr, n_update >= 1, required_rounds >= 1, and non-negative "
+        "convergence thresholds");
+    return 1;
+  }
   if (!HasOnlyOptions(image_outputs, {"overlay", "keypoints"})) {
     RCLCPP_FATAL(node->get_logger(),
                  "image_outputs must be none, overlay, keypoints, or "
@@ -388,7 +416,8 @@ int main(int argc, char **argv) {
     link->AddModality(std::make_shared<m3t::TextureModality>("texture_modality", body, color_camera, sr));
   }
   auto optimizer = std::make_shared<m3t::Optimizer>("optimizer", link);
-  auto tracker = std::make_shared<m3t::Tracker>("tracker", 5, 2, false, true);
+  auto tracker = std::make_shared<m3t::Tracker>(
+      "tracker", max_corr_iterations, n_update_iterations, false, true);
   tracker->AddOptimizer(optimizer);
   // use_gt: seed pose is set at runtime from the pose topic (image-aligned).
   // else: fixed pose from the initial_pose ROS parameter.
@@ -468,6 +497,7 @@ int main(int argc, char **argv) {
     tracker->ExecuteDetection(false);
     auto last_log = clk::now(), last_snap = clk::now(), win = clk::now();
     int solve_n = 0, loop_n = 0, err_n = 0, lost_n = 0;
+    int corr_round_sum = 0, corr_round_max = 0;
     double solve_sum = 0, solve_min = 1e9, solve_max = 0;
     double perr_sum = 0, perr_max = 0, rerr_sum = 0, rerr_max = 0;
     const dsec track_period{track_rate > 0 ? 1.0 / track_rate : 0.0};
@@ -503,7 +533,62 @@ int main(int argc, char **argv) {
         continue;
       }
       const auto s0 = clk::now();
-      if (!tracker->ExecuteTrackingStep(it)) {
+      bool tracking_ok = true;
+      int corr_rounds = 0;
+      int converged_rounds = 0;
+      for (int corr_iteration = 0;
+           corr_iteration < max_corr_iterations; ++corr_iteration) {
+        const auto pose_before_round = body->body2world_pose();
+        const int corr_save_idx =
+            it * max_corr_iterations + corr_iteration;
+        if (!tracker->CalculateCorrespondences(it, corr_iteration) ||
+            !tracker->VisualizeCorrespondences(corr_save_idx)) {
+          tracking_ok = false;
+          break;
+        }
+        for (int update_iteration = 0;
+             update_iteration < n_update_iterations; ++update_iteration) {
+          const int update_save_idx =
+              corr_save_idx * n_update_iterations + update_iteration;
+          if (!tracker->CalculateGradientAndHessian(
+                  it, corr_iteration, update_iteration) ||
+              !tracker->CalculateOptimization(
+                  it, corr_iteration, update_iteration) ||
+              !tracker->VisualizeOptimization(update_save_idx) ||
+              !body->body2world_pose().matrix().allFinite()) {
+            tracking_ok = false;
+            break;
+          }
+        }
+        if (!tracking_ok) break;
+
+        body->set_body2world_pose(ClosestSymmetricPose(
+            body->body2world_pose(), pose_before_round,
+            rotation_symmetries));
+        ++corr_rounds;
+        const auto pose_after_round = body->body2world_pose();
+        const double translation_delta =
+            (pose_after_round.translation() -
+             pose_before_round.translation()).norm();
+        const double rotation_delta = RotationDistanceDeg(
+            pose_after_round.rotation(), pose_before_round.rotation());
+        if (translation_delta <= convergence_translation_threshold &&
+            rotation_delta <= convergence_rotation_threshold_deg) {
+          ++converged_rounds;
+        } else {
+          converged_rounds = 0;
+        }
+        if (adaptive_iterations &&
+            corr_rounds >= min_corr_iterations &&
+            converged_rounds >= convergence_required_rounds) {
+          break;
+        }
+      }
+      if (tracking_ok) {
+        tracking_ok =
+            tracker->CalculateResults(it) && tracker->VisualizeResults(it);
+      }
+      if (!tracking_ok) {
         body->set_body2world_pose(pose_before_update);
         redetect_req.store(true);
         RCLCPP_ERROR_THROTTLE(
@@ -527,6 +612,8 @@ int main(int argc, char **argv) {
           rotation_symmetries));
       solve_sum += solve_ms; solve_min = std::min(solve_min, solve_ms);
       solve_max = std::max(solve_max, solve_ms); ++solve_n; ++loop_n;
+      corr_round_sum += corr_rounds;
+      corr_round_max = std::max(corr_round_max, corr_rounds);
 
       // Tracking-error monitor: estimate vs GT (from TF). Tells on-track vs lost,
       // so the solve time above is only trusted while OK.
@@ -568,14 +655,18 @@ int main(int argc, char **argv) {
         const double mean = solve_sum / std::max(1, solve_n);
         const double pmean = err_n ? 1e3 * perr_sum / err_n : -1.0;   // mm
         const double rmean = err_n ? rerr_sum / err_n : -1.0;         // deg
+        const double corr_mean =
+            solve_n ? static_cast<double>(corr_round_sum) / solve_n : 0.0;
         const bool tracked = err_n > 0 && lost_n * 2 <= err_n;        // majority within threshold
         RCLCPP_INFO(node->get_logger(),
                     "solve: %d | mean %.2f ms (%.0f Hz) | min %.2f max %.2f | loop %.0f Hz"
-                    " | err pos %.1f/%.1f mm rot %.1f/%.1f deg | %s",
+                    " | corr %.1f/%d | err pos %.1f/%.1f mm rot %.1f/%.1f deg | %s",
                     solve_n, mean, mean > 0 ? 1000.0 / mean : 0.0, solve_min, solve_max,
-                    loop_n / std::max(1e-6, w), pmean, 1e3 * perr_max, rmean, rerr_max,
+                    loop_n / std::max(1e-6, w), corr_mean, corr_round_max,
+                    pmean, 1e3 * perr_max, rmean, rerr_max,
                     err_n == 0 ? "no-GT" : (tracked ? "TRACKED" : "LOST"));
         solve_n = loop_n = err_n = lost_n = 0;
+        corr_round_sum = corr_round_max = 0;
         solve_sum = 0; solve_min = 1e9; solve_max = 0;
         perr_sum = perr_max = rerr_sum = rerr_max = 0;
         win = last_log = clk::now();
@@ -587,9 +678,14 @@ int main(int argc, char **argv) {
 
   RCLCPP_INFO(node->get_logger(),
               "tracking | mode=%s track_rate=%.0f (0=max) publish_rate=%.0f "
-              "image_outputs=%s log_period=%.1fs",
+              "image_outputs=%s corr=%d..%d updates=%d adaptive=%d "
+              "convergence=%.3fmm/%.3fdeg x%d log_period=%.1fs",
               event_driven ? "new-frame" : "free-run", track_rate,
-              publish_rate, image_outputs.c_str(), log_period);
+              publish_rate, image_outputs.c_str(), min_corr_iterations,
+              max_corr_iterations, n_update_iterations, adaptive_iterations,
+              1.0e3 * convergence_translation_threshold,
+              convergence_rotation_threshold_deg,
+              convergence_required_rounds, log_period);
   rclcpp::spin(node);
   running = false;
   worker.join();
