@@ -155,6 +155,14 @@ GT topics/TF exist only when the chosen development source publishes them. The d
 
 By default the tracker publishes no image topics (`image_outputs:=none`); raw RGB-D images remain available directly from the camera/source topics. Enable only the required debug output with `image_outputs:=overlay`, `image_outputs:=keypoints`, or `image_outputs:=overlay,keypoints`. `publish_rate` controls TF, marker, and enabled debug-image output; its default is 60 Hz, while pose snapshots are refreshed for every solved camera frame.
 
+## Tracker threading and data ownership
+
+The node has two dedicated worker threads in addition to the ROS executor. Subscriber callbacks retain the latest synchronized `cv_bridge` RGB-D owners as class members and wake the tracker with a condition variable. The tracker thread exclusively owns all mutable M3T objects, renderer state, and pose optimization. The publisher thread atomically loads an immutable pose/image snapshot and performs TF, marker, serialization, and keypoint publication without accessing M3T state. TF and the estimate marker are refreshed at `publish_rate`; optional debug images are serialized only once per new tracker snapshot.
+
+Matching image encodings use `cv_bridge::toCvShare`, so subscriber-to-tracker handoff does not copy pixels. Shared pointers provide lifetime safety; the speedup comes from zero-copy image ownership and the short atomic snapshot exchange, not from pointer type alone. Optional overlay rendering still runs on the tracker thread because its OpenGL renderer and body pose belong to that thread; it remains disabled by default.
+
+On Linux the tracker thread stays at normal `nice=0`, while `publisher_thread_nice` defaults to `5`, giving tracking higher scheduling priority without requiring `sudo`, `CAP_SYS_NICE`, or real-time privileges.
+
 ## Automated smoke tests
 
 After building and sourcing the workspace:

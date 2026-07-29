@@ -1,9 +1,8 @@
 // SPDX-License-Identifier: MIT
-// RosPublisher: snapshot-driven ROS output, decoupled from the tracking solve.
-// It is called by a wall-timer (not by the tracker), so the tracking thread is
-// never blocked by ROS serialization. Optional image publishers and their
-// processing are created only when requested. TF and the estimate marker remain
-// available independently of image output. No GUI windows.
+// RosPublisher: immutable-snapshot ROS output, called only by the dedicated
+// publisher thread. The tracking thread is never blocked by ROS serialization
+// or keypoint extraction. Optional image publishers are created only when
+// requested; TF and the estimate marker remain independent of image output.
 
 #ifndef M3T_ROS2_ROS_PUBLISHER_HPP_
 #define M3T_ROS2_ROS_PUBLISHER_HPP_
@@ -43,6 +42,7 @@ struct Snapshot {
   bool valid{false};
   bool has_depth{false};
   bool has_gt{false};
+  cv_bridge::CvImageConstPtr color_owner, depth_owner;
   cv::Mat color, depth, overlay;
   m3t::Transform3fA body2world_est, geometry2world_est;
   m3t::Transform3fA body2world_gt, geometry2world_gt;
@@ -74,25 +74,31 @@ class RosPublisher {
     tf_ = std::make_unique<tf2_ros::TransformBroadcaster>(node_);
   }
 
-  void Publish(const Snapshot &s) {
+  void Publish(const Snapshot &s, bool publish_images) {
     if (!s.valid) return;
     const rclcpp::Time stamp = node_->now();
     std_msgs::msg::Header h;
     h.stamp = stamp;
     h.frame_id = cfg_.world_frame;
 
-    if (cfg_.publish_color && !s.color.empty())
-      pub_color_->publish(*cv_bridge::CvImage(h, "bgr8", s.color).toImageMsg());
-    if (cfg_.publish_depth && s.has_depth && !s.depth.empty())
-      pub_depth_->publish(*cv_bridge::CvImage(h, "16UC1", s.depth).toImageMsg());
-    if (cfg_.publish_overlay && !s.overlay.empty())
-      pub_overlay_->publish(*cv_bridge::CvImage(h, "bgr8", s.overlay).toImageMsg());
-    if (cfg_.publish_keypoints && !s.color.empty()) {
-      std::vector<cv::KeyPoint> kp;
-      orb_->detect(s.color, kp);
-      cv::Mat kimg;
-      cv::drawKeypoints(s.color, kp, kimg, cv::Scalar(0, 255, 0));
-      pub_keypoints_->publish(*cv_bridge::CvImage(h, "bgr8", kimg).toImageMsg());
+    if (publish_images) {
+      if (cfg_.publish_color && !s.color.empty())
+        pub_color_->publish(
+            *cv_bridge::CvImage(h, "bgr8", s.color).toImageMsg());
+      if (cfg_.publish_depth && s.has_depth && !s.depth.empty())
+        pub_depth_->publish(
+            *cv_bridge::CvImage(h, "16UC1", s.depth).toImageMsg());
+      if (cfg_.publish_overlay && !s.overlay.empty())
+        pub_overlay_->publish(
+            *cv_bridge::CvImage(h, "bgr8", s.overlay).toImageMsg());
+      if (cfg_.publish_keypoints && !s.color.empty()) {
+        std::vector<cv::KeyPoint> kp;
+        orb_->detect(s.color, kp);
+        cv::Mat kimg;
+        cv::drawKeypoints(s.color, kp, kimg, cv::Scalar(0, 255, 0));
+        pub_keypoints_->publish(
+            *cv_bridge::CvImage(h, "bgr8", kimg).toImageMsg());
+      }
     }
 
     BroadcastTf(stamp, "object_est", s.body2world_est);

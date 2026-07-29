@@ -12,6 +12,8 @@ m3t_tracker_node:
     convergence_translation_threshold: 0.0001
     convergence_rotation_threshold_deg: 0.05
     convergence_required_rounds: 2
+    # Tracker remains at normal nice=0; publisher is deliberately lower.
+    publisher_thread_nice: 5
     image_outputs: "none"
     sync_tolerance: 0.02
     depth_scale: 0.001
