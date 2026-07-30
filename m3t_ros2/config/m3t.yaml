@@ -42,21 +42,21 @@ m3t_synthetic_source:
     # Independent x/y/z sinusoids. 
     # Independent roll/pitch/yaw sinusoids using ZYX composition.
 
-    # Fast motion
-    # translation_amplitude_m: [0.05, 0.04, 0.03]
-    # translation_frequency_hz: [0.25, 0.50, 0.75]
-    # translation_phase_deg: [0.0, 0.0, 0.0]
-    # rotation_amplitude_deg: [15.0, 20.0, 30.0]
-    # rotation_frequency_hz: [0.25, 0.50, 0.75]
-    # rotation_phase_deg: [0.0, 0.0, 0.0]
-    
-    # Slow motion
-    translation_amplitude_m: [0.05, 0.04, 0.03]
-    translation_frequency_hz: [0.1, 0.2, 0.25]
-    translation_phase_deg: [0.0, 0.0, 0.0]
-    rotation_amplitude_deg: [30.0, 30.0, 60.0]
-    rotation_frequency_hz: [0.1, 0.1, 0.1]
-    rotation_phase_deg: [60.0, 0.0, 90.0]
+    # Small & rapid motion
+    translation_amplitude_m: [0.01, 0.02, 0.05]
+    translation_frequency_hz: [0.25, 0.50, 0.75]
+    translation_phase_deg: [30.0, 0.0, 30.0]
+    rotation_amplitude_deg: [15.0, 10.0, 30.0]
+    rotation_frequency_hz: [0.25, 0.50, 0.75]
+    rotation_phase_deg: [60.0, 90.0, 0.0]
+
+    # Large & slow motion
+    # translation_amplitude_m: [0.05, 0.05, 0.1]
+    # translation_frequency_hz: [0.1, 0.2, 0.25]
+    # translation_phase_deg: [0.0, 30.0, 0.0]
+    # rotation_amplitude_deg: [30.0, 30.0, 60.0]
+    # rotation_frequency_hz: [0.1, 0.1, 0.1]
+    # rotation_phase_deg: [60.0, 0.0, 90.0]
 
     # Translation can be expressed in the initial world or body axes.
     # Rotation increments can be left-applied in world or right-applied in body.
