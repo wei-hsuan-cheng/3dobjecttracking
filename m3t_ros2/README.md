@@ -12,7 +12,7 @@ camera/image publisher                       m3t_tracker_node
   depth CameraInfo ------------------------> depth intrinsics
 ```
 
-- Built-in objects: `triangle`, `box`, `cylinder`, and `mustard`.
+- Built-in objects: `triangle`, `box`, `cylinder`, `mustard`, `cracker_box`, etc.
 - Supported modalities: combination of `region`, `depth`, and `texture`.
 
 The tracker never reads camera intrinsics from an object or tracker config. It waits until the external camera has published both `Image` and `CameraInfo` before it initializes M3T.
@@ -52,7 +52,7 @@ m3t_ros2/
 ```bash
 ros2 launch m3t_ros2 m3t.launch.py \
   source:=synthetic object:=box rviz:=true
-# object:=box | triangle | cylinder | mustard | etc.
+# object:=box | triangle | cylinder | mustard | cracker_box |etc.
 ```
 
 Per-frame refinement is configured under `m3t_tracker_node.ros__parameters` in `config/m3t.yaml`. The tracker runs at least `min_corr_iterations` and at most `max_corr_iterations`, with `n_update_iterations` pose updates per correspondence round. It stops early after both pose-change thresholds remain satisfied for `convergence_required_rounds` consecutive rounds. Set `adaptive_iterations: false` to always run `max_corr_iterations`.
@@ -256,6 +256,7 @@ BUILTIN_OBJECTS = {
     "box": "box.yaml",
     "cylinder": "cylinder.yaml",
     "mustard": "mustard.yaml",
+    "cracker_box": "cracker_box.yaml",
     "my_object": "my_object.yaml",
 }
 ```

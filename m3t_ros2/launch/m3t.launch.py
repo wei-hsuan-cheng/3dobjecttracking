@@ -37,6 +37,7 @@ BUILTIN_OBJECTS = {
     "box": "box.yaml",
     "cylinder": "cylinder.yaml",
     "mustard": "mustard.yaml",
+    "cracker_box": "cracker_box.yaml",
 }
 
 
