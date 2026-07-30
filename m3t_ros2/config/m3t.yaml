@@ -36,7 +36,38 @@ m3t_synthetic_source:
     depth_noise: 0.01
     distortion: 0.005
     depth_scale: 0.001
-    motion_mode: orbit
+
+    # Optional exact row-major body-to-camera pose at frame zero. When omitted,
+    # the node centers the mesh and automatically selects a viewing distance.
+    # gt_initial_pose: [
+    #   1.0, 0.0, 0.0, 0.0,
+    #   0.0, 1.0, 0.0, 0.0,
+    #   0.0, 0.0, 1.0, 0.60,
+    #   0.0, 0.0, 0.0, 1.0
+    # ]
+
+    # 
+    motion_mode: six_dof_sine # six_dof_sine | orbit | static
+
+    # Independent x/y/z sinusoids. Position units are meters, frequency is Hz,
+    # and phase is degrees. The frame-zero offset is always zero, so
+    # gt_initial_pose remains the exact pose at frame 0.
+    translation_amplitude_m: [0.05, 0.04, 0.03]
+    translation_frequency_hz: [0.25, 0.50, 0.75]
+    translation_phase_deg: [0.0, 0.0, 0.0]
+
+    # Independent roll/pitch/yaw sinusoids using ZYX composition.
+    rotation_amplitude_deg: [15.0, 20.0, 30.0]
+    rotation_frequency_hz: [0.25, 0.50, 0.75]
+    rotation_phase_deg: [0.0, 0.0, 0.0]
+
+    # Translation can be expressed in the initial world or body axes.
+    # Rotation increments can be left-applied in world or right-applied in body.
+    translation_frame: world
+    rotation_frame: body
+    rotation_pivot: geometry_center
+
+    # Parameters used only when motion_mode is orbit.
     spin_turns: 1.0
     nod_degrees: 25.0
     world_frame: camera

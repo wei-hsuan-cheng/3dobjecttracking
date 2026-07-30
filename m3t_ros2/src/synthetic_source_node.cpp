@@ -34,6 +34,8 @@
 
 namespace {
 
+constexpr float kPi = 3.14159265358979323846f;
+
 sensor_msgs::msg::CameraInfo MakeCameraInfo(const m3t::Intrinsics &intrinsics,
                                             const std::string &frame_id) {
   sensor_msgs::msg::CameraInfo info;
@@ -72,6 +74,30 @@ class SyntheticSourceNode : public rclcpp::Node {
     const auto translation_amplitude_values =
         declare_parameter<std::vector<double>>(
             "translation_amplitude", std::vector<double>{});
+    const auto translation_sine_amplitude_values =
+        declare_parameter<std::vector<double>>(
+            "translation_amplitude_m", {0.0, 0.0, 0.0});
+    const auto translation_sine_frequency_values =
+        declare_parameter<std::vector<double>>(
+            "translation_frequency_hz", {0.0, 0.0, 0.0});
+    const auto translation_sine_phase_values =
+        declare_parameter<std::vector<double>>(
+            "translation_phase_deg", {0.0, 0.0, 0.0});
+    const auto rotation_sine_amplitude_values =
+        declare_parameter<std::vector<double>>(
+            "rotation_amplitude_deg", {0.0, 0.0, 0.0});
+    const auto rotation_sine_frequency_values =
+        declare_parameter<std::vector<double>>(
+            "rotation_frequency_hz", {0.0, 0.0, 0.0});
+    const auto rotation_sine_phase_values =
+        declare_parameter<std::vector<double>>(
+            "rotation_phase_deg", {0.0, 0.0, 0.0});
+    translation_frame_ =
+        declare_parameter<std::string>("translation_frame", "world");
+    rotation_frame_ =
+        declare_parameter<std::string>("rotation_frame", "body");
+    rotation_pivot_ =
+        declare_parameter<std::string>("rotation_pivot", "geometry_center");
     world_frame_ = declare_parameter<std::string>("world_frame", "camera");
     camera_frame_ =
         declare_parameter<std::string>("camera_frame", world_frame_);
@@ -115,8 +141,22 @@ class SyntheticSourceNode : public rclcpp::Node {
     const auto gt_marker_topic = declare_parameter<std::string>(
         "gt_marker_topic", "/m3t/marker_gt");
 
-    if (motion_mode_ != "orbit" && motion_mode_ != "static") {
-      throw std::runtime_error("motion_mode must be orbit or static");
+    if (motion_mode_ != "orbit" && motion_mode_ != "static" &&
+        motion_mode_ != "six_dof_sine") {
+      throw std::runtime_error(
+          "motion_mode must be orbit, six_dof_sine, or static");
+    }
+    if (translation_frame_ != "world" && translation_frame_ != "body") {
+      throw std::runtime_error(
+          "translation_frame must be world or body");
+    }
+    if (rotation_frame_ != "world" && rotation_frame_ != "body") {
+      throw std::runtime_error("rotation_frame must be world or body");
+    }
+    if (rotation_pivot_ != "geometry_center" &&
+        rotation_pivot_ != "body_origin") {
+      throw std::runtime_error(
+          "rotation_pivot must be geometry_center or body_origin");
     }
     if (!gt_initial_pose_values.empty()) {
       gt_initial_pose_ = m3t_ros2::TransformFromRowMajor(
@@ -150,6 +190,27 @@ class SyntheticSourceNode : public rclcpp::Node {
       }
       has_translation_amplitude_ = true;
     }
+    translation_sine_amplitude_m_ = ParseVector3(
+        translation_sine_amplitude_values, "translation_amplitude_m");
+    translation_sine_frequency_hz_ = ParseVector3(
+        translation_sine_frequency_values, "translation_frequency_hz");
+    translation_sine_phase_rad_ =
+        ParseVector3(translation_sine_phase_values, "translation_phase_deg") *
+        (kPi / 180.0f);
+    rotation_sine_amplitude_rad_ =
+        ParseVector3(rotation_sine_amplitude_values, "rotation_amplitude_deg") *
+        (kPi / 180.0f);
+    rotation_sine_frequency_hz_ = ParseVector3(
+        rotation_sine_frequency_values, "rotation_frequency_hz");
+    rotation_sine_phase_rad_ =
+        ParseVector3(rotation_sine_phase_values, "rotation_phase_deg") *
+        (kPi / 180.0f);
+    if ((translation_sine_frequency_hz_.array() < 0.0f).any() ||
+        (rotation_sine_frequency_hz_.array() < 0.0f).any()) {
+      throw std::runtime_error(
+          "translation_frequency_hz and rotation_frequency_hz "
+          "must be non-negative");
+    }
     if (publish_rate_ <= 0.0 || gt_publish_rate_ <= 0.0 ||
         n_frames_ <= 1 || depth_scale_ <= 0.0 ||
         !std::isfinite(spin_turns_) || !std::isfinite(nod_degrees_)) {
@@ -168,6 +229,7 @@ class SyntheticSourceNode : public rclcpp::Node {
     pub_depth_info_ =
         create_publisher<sensor_msgs::msg::CameraInfo>(depth_info_topic, qos);
     SetUpRenderer();
+    WarnIfLoopIsDiscontinuous();
     color_info_ = MakeCameraInfo(intrinsics_, camera_frame_);
     depth_info_ = MakeCameraInfo(intrinsics_, camera_frame_);
 
@@ -197,6 +259,56 @@ class SyntheticSourceNode : public rclcpp::Node {
   }
 
  private:
+  static Eigen::Vector3f ParseVector3(
+      const std::vector<double> &values, const std::string &parameter_name) {
+    if (values.size() != 3) {
+      throw std::runtime_error(
+          parameter_name + " must contain exactly [x, y, z] or "
+          "[roll, pitch, yaw]");
+    }
+    Eigen::Vector3f result{
+        static_cast<float>(values[0]),
+        static_cast<float>(values[1]),
+        static_cast<float>(values[2])};
+    if (!result.allFinite()) {
+      throw std::runtime_error(
+          parameter_name + " must contain finite values");
+    }
+    return result;
+  }
+
+  void WarnIfLoopIsDiscontinuous() const {
+    if (!loop_ || motion_mode_ != "six_dof_sine") return;
+
+    const double sequence_duration =
+        static_cast<double>(n_frames_) / publish_rate_;
+    const auto check_frequencies =
+        [this, sequence_duration](const Eigen::Vector3f &amplitude,
+                                  const Eigen::Vector3f &frequency,
+                                  const char *group) {
+          static constexpr const char *kAxisNames[] = {"x", "y", "z"};
+          for (int axis = 0; axis < 3; ++axis) {
+            if (std::abs(amplitude[axis]) <= 1.0e-8f ||
+                frequency[axis] <= 0.0f) {
+              continue;
+            }
+            const double cycles =
+                static_cast<double>(frequency[axis]) * sequence_duration;
+            if (std::abs(cycles - std::round(cycles)) > 1.0e-5) {
+              RCLCPP_WARN(
+                  get_logger(),
+                  "%s %s-axis sine completes %.6f cycles in %.6f s; "
+                  "loop reset will cause a pose jump",
+                  group, kAxisNames[axis], cycles, sequence_duration);
+            }
+          }
+        };
+    check_frequencies(translation_sine_amplitude_m_,
+                      translation_sine_frequency_hz_, "translation");
+    check_frequencies(rotation_sine_amplitude_rad_,
+                      rotation_sine_frequency_hz_, "rotation");
+  }
+
   void SetUpRenderer() {
     body_ = m3t_ros2::DeclareAndCreateBody(this, true);
     renderer_geometry_ =
@@ -242,9 +354,12 @@ class SyntheticSourceNode : public rclcpp::Node {
     }
     if (!has_gt_initial_pose_) {
       gt_initial_pose_ = m3t::Transform3fA::Identity();
+      const float initial_y =
+          motion_mode_ == "six_dof_sine"
+              ? 0.0f
+              : translation_amplitude_.y();
       gt_initial_pose_.translation() =
-          Eigen::Vector3f{
-              0.0f, translation_amplitude_.y(), viewing_distance_} -
+          Eigen::Vector3f{0.0f, initial_y, viewing_distance_} -
           mesh_center_in_body_;
     }
 
@@ -275,10 +390,7 @@ class SyntheticSourceNode : public rclcpp::Node {
                 diagonal, viewing_distance_);
   }
 
-  m3t::Transform3fA PoseForFrame(int frame) const {
-    if (motion_mode_ == "static") return gt_initial_pose_;
-
-    constexpr float kPi = 3.14159265358979323846f;
+  m3t::Transform3fA OrbitPoseForFrame(int frame) const {
     const float phase =
         2.0f * kPi * static_cast<float>(frame) /
         static_cast<float>(n_frames_);
@@ -303,6 +415,68 @@ class SyntheticSourceNode : public rclcpp::Node {
         initial_center + translation_offset -
         pose.rotation() * mesh_center_in_body_;
     return pose;
+  }
+
+  m3t::Transform3fA SixDofSinePoseForFrame(int frame) const {
+    const float time =
+        static_cast<float>(frame) / static_cast<float>(publish_rate_);
+    Eigen::Vector3f translation_offset = Eigen::Vector3f::Zero();
+    Eigen::Vector3f rpy = Eigen::Vector3f::Zero();
+    for (int axis = 0; axis < 3; ++axis) {
+      const float translation_argument =
+          2.0f * kPi * translation_sine_frequency_hz_[axis] * time +
+          translation_sine_phase_rad_[axis];
+      translation_offset[axis] =
+          translation_sine_amplitude_m_[axis] *
+          (std::sin(translation_argument) -
+           std::sin(translation_sine_phase_rad_[axis]));
+
+      const float rotation_argument =
+          2.0f * kPi * rotation_sine_frequency_hz_[axis] * time +
+          rotation_sine_phase_rad_[axis];
+      rpy[axis] =
+          rotation_sine_amplitude_rad_[axis] *
+          (std::sin(rotation_argument) -
+           std::sin(rotation_sine_phase_rad_[axis]));
+    }
+
+    if (translation_frame_ == "body") {
+      translation_offset =
+          gt_initial_pose_.rotation() * translation_offset;
+    }
+
+    // ZYX convention: R_delta = Rz(yaw) * Ry(pitch) * Rx(roll).
+    const Eigen::Matrix3f delta_rotation =
+        (Eigen::AngleAxisf(rpy.z(), Eigen::Vector3f::UnitZ()) *
+         Eigen::AngleAxisf(rpy.y(), Eigen::Vector3f::UnitY()) *
+         Eigen::AngleAxisf(rpy.x(), Eigen::Vector3f::UnitX()))
+            .toRotationMatrix();
+    const Eigen::Matrix3f rotation =
+        rotation_frame_ == "body"
+            ? gt_initial_pose_.rotation() * delta_rotation
+            : delta_rotation * gt_initial_pose_.rotation();
+
+    m3t::Transform3fA pose{m3t::Transform3fA::Identity()};
+    pose.linear() = rotation;
+    if (rotation_pivot_ == "geometry_center") {
+      const Eigen::Vector3f initial_center =
+          gt_initial_pose_ * mesh_center_in_body_;
+      pose.translation() =
+          initial_center + translation_offset -
+          rotation * mesh_center_in_body_;
+    } else {
+      pose.translation() =
+          gt_initial_pose_.translation() + translation_offset;
+    }
+    return pose;
+  }
+
+  m3t::Transform3fA PoseForFrame(int frame) const {
+    if (motion_mode_ == "static") return gt_initial_pose_;
+    if (motion_mode_ == "six_dof_sine") {
+      return SixDofSinePoseForFrame(frame);
+    }
+    return OrbitPoseForFrame(frame);
   }
 
   void PublishFrame() {
@@ -391,6 +565,9 @@ class SyntheticSourceNode : public rclcpp::Node {
   std::string mesh_resource_;
   std::string texture_path_;
   std::string motion_mode_{"orbit"};
+  std::string translation_frame_{"world"};
+  std::string rotation_frame_{"body"};
+  std::string rotation_pivot_{"geometry_center"};
   double publish_rate_{30.0};
   double gt_publish_rate_{60.0};
   int n_frames_{240};
@@ -410,6 +587,18 @@ class SyntheticSourceNode : public rclcpp::Node {
   Eigen::Vector3f mesh_center_{Eigen::Vector3f::Zero()};
   Eigen::Vector3f mesh_center_in_body_{Eigen::Vector3f::Zero()};
   Eigen::Vector3f translation_amplitude_{Eigen::Vector3f::Zero()};
+  Eigen::Vector3f translation_sine_amplitude_m_{
+      Eigen::Vector3f::Zero()};
+  Eigen::Vector3f translation_sine_frequency_hz_{
+      Eigen::Vector3f::Zero()};
+  Eigen::Vector3f translation_sine_phase_rad_{
+      Eigen::Vector3f::Zero()};
+  Eigen::Vector3f rotation_sine_amplitude_rad_{
+      Eigen::Vector3f::Zero()};
+  Eigen::Vector3f rotation_sine_frequency_hz_{
+      Eigen::Vector3f::Zero()};
+  Eigen::Vector3f rotation_sine_phase_rad_{
+      Eigen::Vector3f::Zero()};
   m3t::Transform3fA gt_initial_pose_{m3t::Transform3fA::Identity()};
   float viewing_distance_{0.5f};
   std::shared_ptr<m3t::Body> body_;
