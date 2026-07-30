@@ -1,6 +1,6 @@
 # m3t_ros2
 
-`m3t_ros2` is the unified ROS 2 interface for M3T. A normal colcon build compiles both M3T and this package; no source-local `M3T/build`, example generator, `sudo`, or generated files below `M3T/temp` are needed.
+`m3t_ros2` is the unified ROS 2 interface for M3T.
 
 The tracker is independent of its image source:
 
@@ -12,7 +12,13 @@ camera/image publisher                       m3t_tracker_node
   depth CameraInfo ------------------------> depth intrinsics
 ```
 
-The tracker never reads camera intrinsics from an object or tracker config. It waits until the external camera has published both `Image` and `CameraInfo` before it initializes M3T. The optional synthetic and sequence nodes in this package are camera publishers for development only, so their own intrinsics are configured in their ROS parameter sections.
+- Built-in objects: `triangle`, `box`, `cylinder`, and `mustard`.
+- Supported modalities: combination of `region`, `depth`, and `texture`.
+
+
+The tracker never reads camera intrinsics from an object or tracker config. It waits until the external camera has published both `Image` and `CameraInfo` before it initializes M3T.
+
+The optional synthetic and sequence nodes in this package are camera publishers for development only, so their own intrinsics are configured in their ROS parameter sections.
 
 ## Build
 
@@ -32,9 +38,6 @@ colcon build --symlink-install \
   . install/setup.bash
 ```
 
-M3T's library is a normal colcon package dependency. Its examples are disabled by default.
-
-If `install/` was deleted after the workspace had been sourced, start a fresh container shell before rebuilding; the old shell still contains paths to the deleted prefixes and colcon will warn that they do not exist.
 
 ## Package layout
 
@@ -46,52 +49,16 @@ m3t_ros2/
   launch/m3t.launch.py            one launch interface
 ```
 
-Object YAML files are ROS parameter files. They replace M3T body metafiles, static-detector YAML, and text GT pose files. A recorded sequence puts its directory, intrinsics, and all frame poses in another ROS parameter YAML passed with `sequence_config:=...`; copy `config/sequence_example.yaml` as a starting point.
-
-Generated region/depth models are runtime cache files, not source assets. The launch default follows the OCS2 convention:
-
-```text
-<launch working directory>/auto_generated/m3t/<object>/
-  region_model.bin
-  depth_model.bin
-```
-
-Override it with `model_cache_dir:=/writable/path`. The tracker creates the directory and checks it is writable before setup. Direct `ros2 run` usage without that parameter falls back to `$ROS_HOME/m3t/cache/<object>` (normally `~/.ros/m3t/cache/<object>`).
-
-If `XDG_RUNTIME_DIR` is unset, the launch file creates a private OpenGL runtime directory under `${ROS_HOME:-$HOME/.ros}/m3t/` instead of relying on `/tmp/runtime-<user>`.
 
 ## Run with the online synthetic source
 
-This replaces `generate_orbit_sequence`: RGB, depth, CameraInfo, and GT are rendered and published online without writing an image sequence. An object YAML can provide `texture_path`; the synthetic RGB source then renders the OBJ UV texture instead of surface-normal colors.
 
 ```bash
 ros2 launch m3t_ros2 m3t.launch.py \
   source:=synthetic object:=box rviz:=true
 
-ros2 launch m3t_ros2 m3t.launch.py \
-  source:=synthetic object:=mustard rviz:=true
+# object:=box | triangle | cylinder | mustard | etc.
 ```
-
-Built-in objects are `triangle`, `box`, `cylinder`, and `mustard`. `modalities` accepts any comma-separated combination of `region`, `depth`, and `texture`, and the launch default enables all three. Mustard uses the official YCB texture map in its synthetic RGB images. `modalities:=auto` uses the object YAML recommendation, which is `region,depth,texture` for mustard and `region,depth` when an object does not specify one.
-
-Synthetic GT motion is configured under `m3t_synthetic_source.ros__parameters` in `config/m3t.yaml`; an object-specific `gt_initial_pose` can also be placed in its object YAML. `gt_initial_pose` is the exact row-major body-to-world pose at frame zero. `translation_amplitude` is an optional `[x, y, z]` vector in meters; when omitted, the orbit amplitude scales with the automatically fitted viewing distance. `motion_mode: static` holds the initial pose, while `motion_mode: orbit` applies the configured translation, `spin_turns`, and `nod_degrees`. The optional `motion_mode`, `spin_turns`, and `nod_degrees` launch arguments override YAML only when explicitly supplied.
-
-```yaml
-m3t_synthetic_source:
-  ros__parameters:
-    motion_mode: orbit
-    spin_turns: 1.0
-    nod_degrees: 25.0
-    translation_amplitude: [0.08, 0.04, 0.05]
-    gt_initial_pose: [
-      1.0, 0.0, 0.0, 0.0,
-      0.0, 1.0, 0.0, 0.05,
-      0.0, 0.0, 1.0, 0.60,
-      0.0, 0.0, 0.0, 1.0
-    ]
-```
-
-The tracker defaults to one update per fresh synchronized camera frame (`event_driven:=true`). The reported inverse solve time is compute capacity, not the rate of independent pose estimates: actual tracking rate is bounded by the camera source rate. `event_driven:=false` repeatedly optimizes the same frame and is only intended for short compute benchmarks; it can over-update stateful modalities and destabilize tracking.
 
 Per-frame refinement is configured under `m3t_tracker_node.ros__parameters` in `config/m3t.yaml`. The tracker runs at least `min_corr_iterations` and at most `max_corr_iterations`, with `n_update_iterations` pose updates per correspondence round. It stops early after both pose-change thresholds remain satisfied for `convergence_required_rounds` consecutive rounds. Set `adaptive_iterations: false` to always run `max_corr_iterations`.
 
@@ -129,6 +96,7 @@ Initialization modes:
 
 The camera driver must publish valid dimensions and the pinhole matrix `K` in `sensor_msgs/msg/CameraInfo`. With the depth modality enabled, RGB and depth timestamps must fall within `sync_tolerance` (default 0.02 seconds).
 
+
 ## Run a recorded sequence
 
 ```bash
@@ -140,58 +108,7 @@ ros2 launch m3t_ros2 m3t.launch.py \
 
 The sequence node is read-only. File patterns, frame count, camera intrinsics, and optional `gt_poses` are ROS parameters. It never creates files in the dataset or package tree.
 
+
 ## Custom object
 
-Keep the same ROS YAML schema as `config/objects/box.yaml`, and point `geometry_path` at `m3t_ros2/assets/<object>/model.obj` (or an absolute mesh path):
-
-```bash
-ros2 launch m3t_ros2 m3t.launch.py \
-  source:=topics \
-  object_config:=/absolute/path/to/my_object.yaml \
-  modalities:=region
-```
-
-For an external config, relative `geometry_path` is resolved relative to that YAML file.
-
-Objects with discrete rotational symmetry can provide non-identity row-major 3x3 matrices in `rotation_symmetries`. The tracker uses them for symmetry-aware rotation error and selects the equivalent pose closest to the previous estimate, preventing TF-axis flips for objects such as the built-in box.
-
-## Outputs and control
-
-| Interface | Type |
-|---|---|
-| `~/overlay/image` | optional estimated-pose overlay |
-| `~/keypoints/image` | optional texture-modality debug image |
-| `~/marker_est` | estimated mesh marker |
-| TF `world_frame -> object_est` | estimated object pose |
-| `/m3t/pose_gt` | image-aligned GT pose from a development source |
-| `/m3t/marker_gt` | gray GT mesh marker from a development source |
-| TF `world_frame -> object_gt` | GT pose refreshed at `gt_publish_rate` |
-| `~/redetect` | `std_srvs/srv/Trigger` |
-
-GT topics/TF exist only when the chosen development source publishes them. The default `gt_publish_rate` is 60 Hz and is configured in `config/m3t.yaml`.
-
-By default the tracker publishes no image topics (`image_outputs:=none`); raw RGB-D images remain available directly from the camera/source topics. Enable only the required debug output with `image_outputs:=overlay`, `image_outputs:=keypoints`, or `image_outputs:=overlay,keypoints`. `publish_rate` controls TF, marker, and enabled debug-image output; its default is 60 Hz, while pose snapshots are refreshed for every solved camera frame.
-
-## Tracker threading and data ownership
-
-The node has two dedicated worker threads in addition to the ROS executor. Subscriber callbacks retain the latest synchronized `cv_bridge` RGB-D owners as class members and wake the tracker with a condition variable. The tracker thread exclusively owns all mutable M3T objects, renderer state, and pose optimization. The publisher thread atomically loads an immutable pose/image snapshot and performs TF, marker, serialization, and keypoint publication without accessing M3T state. TF and the estimate marker are refreshed at `publish_rate`; optional debug images are serialized only once per new tracker snapshot.
-
-Matching image encodings use `cv_bridge::toCvShare`, so subscriber-to-tracker handoff does not copy pixels. Shared pointers provide lifetime safety; the speedup comes from zero-copy image ownership and the short atomic snapshot exchange, not from pointer type alone. Optional overlay rendering still runs on the tracker thread because its OpenGL renderer and body pose belong to that thread; it remains disabled by default.
-
-On Linux the tracker thread stays at normal `nice=0`, while `publisher_thread_nice` defaults to `5`, giving tracking higher scheduling priority without requiring `sudo`, `CAP_SYS_NICE`, or real-time privileges.
-
-## Automated smoke tests
-
-After building and sourcing the workspace:
-
-```bash
-ros2 run m3t_ros2 m3t_smoke_test synthetic
-ros2 run m3t_ros2 m3t_smoke_test external-camera
-```
-
-The second test verifies that tracker-only mode does not initialize before CameraInfo arrives, starts a separate camera publisher process, and then waits for a `TRACKED` result. Logs go to `${ROS_HOME:-$HOME/.ros}/m3t/smoke_logs`; set `M3T_SMOKE_TIMEOUT`, `M3T_SMOKE_OBJECT`, `M3T_SMOKE_MODALITIES`, or `M3T_SMOKE_INIT_MODE` to override test settings. For example, this verifies the object YAML's `initial_pose` path:
-
-```bash
-M3T_SMOKE_INIT_MODE=static \
-  ros2 run m3t_ros2 m3t_smoke_test external-camera
-```
+TBD
