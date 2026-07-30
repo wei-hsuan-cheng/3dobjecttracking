@@ -27,8 +27,11 @@ test -n "${texture_file}"
 
 mkdir -p "${object_dir}"
 install -m 644 "${obj_file}" "${object_dir}/model.obj"
-install -m 644 "${mtl_file}" "${object_dir}/textured.mtl"
 install -m 644 "${texture_file}" "${object_dir}/texture_map.png"
+
+LC_ALL=C sed 's/[[:space:]]*$//' "${mtl_file}" \
+  > "${object_dir}/textured.mtl"
+chmod 644 "${object_dir}/textured.mtl"
 
 obj_sha="$(sha256sum "${object_dir}/model.obj" | awk '{print $1}')"
 mtl_sha="$(sha256sum "${object_dir}/textured.mtl" | awk '{print $1}')"
@@ -39,7 +42,7 @@ cat > "${object_dir}/SOURCE.md" <<EOF
 
 \`model.obj\`, \`textured.mtl\`, and \`texture_map.png\` are the Google 16k textured model for YCB object \`003_cracker_box\`, downloaded from \`${source_url}\`.
 
-The YCB data is licensed under Creative Commons Attribution 4.0 International (CC BY 4.0). The original \`textured.obj\` is retained as \`model.obj\` to match the package-wide asset naming convention.
+The YCB data is licensed under Creative Commons Attribution 4.0 International (CC BY 4.0). The original \`textured.obj\` is retained as \`model.obj\` to match the package-wide asset naming convention. Trailing whitespace is removed from the MTL so RViz/OGRE resolves its texture filename correctly.
 
 SHA-256:
 
