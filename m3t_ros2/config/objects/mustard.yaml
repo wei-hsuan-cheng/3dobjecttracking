@@ -13,8 +13,8 @@
       0.0, 0.0, 1.0, 0.0,
       0.0, 0.0, 0.0, 1.0
     ]
-    body_id: 210
-    region_id: 210
+    body_id: 6
+    region_id: 6
     # [x, y, z, roll, pitch, yaw], with angles in radians.
     initial_pose: [0.015339, 0.088048545, 0.55300295, 1.5708, 0.0, 0.0]
     gt_initial_pose: [0.015339, 0.088048545, 0.55300295, 1.5708, 0.0, 0.0]
