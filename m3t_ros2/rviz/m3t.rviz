@@ -5,7 +5,7 @@ Panels:
     Property Tree Widget:
       Expanded: ~
       Splitter Ratio: 0.5
-    Tree Height: 196
+    Tree Height: 70
 Visualization Manager:
   Class: ""
   Displays:
@@ -38,7 +38,7 @@ Visualization Manager:
           Value: true
         object_gt:
           Value: true
-      Marker Scale: 1
+      Marker Scale: 1.0
       Name: TF
       Show Arrows: true
       Show Axes: true
@@ -82,20 +82,6 @@ Visualization Manager:
       Max Value: 1
       Median window: 5
       Min Value: 0
-      Name: Overlay
-      Normalize Range: true
-      Topic:
-        Depth: 5
-        Durability Policy: Volatile
-        History Policy: Keep Last
-        Reliability Policy: Best Effort
-        Value: /m3t_tracker_node/overlay/image
-      Value: false
-    - Class: rviz_default_plugins/Image
-      Enabled: false
-      Max Value: 1
-      Median window: 5
-      Min Value: 0
       Name: Color
       Normalize Range: true
       Topic:
@@ -104,20 +90,6 @@ Visualization Manager:
         History Policy: Keep Last
         Reliability Policy: Best Effort
         Value: /camera/color/image_raw
-      Value: false
-    - Class: rviz_default_plugins/Image
-      Enabled: false
-      Max Value: 1
-      Median window: 5
-      Min Value: 0
-      Name: Keypoints
-      Normalize Range: true
-      Topic:
-        Depth: 5
-        Durability Policy: Volatile
-        History Policy: Keep Last
-        Reliability Policy: Best Effort
-        Value: /m3t_tracker_node/keypoints/image
       Value: false
     - Class: rviz_default_plugins/Image
       Enabled: false
@@ -133,6 +105,34 @@ Visualization Manager:
         Reliability Policy: Best Effort
         Value: /camera/depth/image_raw
       Value: false
+    - Class: rviz_default_plugins/Image
+      Enabled: true
+      Max Value: 1
+      Median window: 5
+      Min Value: 0
+      Name: Keypoints
+      Normalize Range: true
+      Topic:
+        Depth: 5
+        Durability Policy: Volatile
+        History Policy: Keep Last
+        Reliability Policy: Best Effort
+        Value: /m3t_tracker_node/keypoints/image
+      Value: true
+    - Class: rviz_default_plugins/Image
+      Enabled: true
+      Max Value: 1
+      Median window: 5
+      Min Value: 0
+      Name: Overlay
+      Normalize Range: true
+      Topic:
+        Depth: 5
+        Durability Policy: Volatile
+        History Policy: Keep Last
+        Reliability Policy: Best Effort
+        Value: /m3t_tracker_node/overlay/image
+      Value: true
   Enabled: true
   Global Options:
     Background Color: 48; 48; 48
@@ -175,14 +175,14 @@ Window Geometry:
     collapsed: false
   Displays:
     collapsed: false
-  Height: 880
+  Height: 1043
   Hide Left Dock: false
   Hide Right Dock: false
   Keypoints:
     collapsed: false
   Overlay:
     collapsed: false
-  QMainWindow State: 000000ff00000000fd0000000100000000000002090000031afc0200000005fb0000000a00440065007000740068000000003b000001740000002800fffffffb00000012004b006500790070006f0069006e0074007300000000a8000000b40000002800fffffffb0000000a0043006f006c006f007200000000f9000000590000002800fffffffb000000100044006900730070006c006100790073010000003b00000145000000c700fffffffb0000000e004f007600650072006c006100790100000186000001cf0000002800ffffff000003970000031a00000004000000040000000800000008fc0000000100000002000000010000000a0054006f006f006c00730100000000ffffffff0000000000000000
-  Width: 1446
-  X: 66
-  Y: 32
+  QMainWindow State: 000000ff00000000fd000000010000000000000209000003bdfc0200000005fb0000000a00440065007000740068000000003b000001740000002800fffffffb0000000a0043006f006c006f007200000000f9000000590000002800fffffffb000000100044006900730070006c006100790073010000003b000000c7000000c700fffffffb00000012004b006500790070006f0069006e007400730100000108000001610000002800fffffffb0000000e004f007600650072006c00610079010000026f000001890000002800ffffff00000571000003bd00000004000000040000000800000008fc0000000100000002000000010000000a0054006f006f006c00730100000000ffffffff0000000000000000
+  Width: 1920
+  X: 0
+  Y: 0
