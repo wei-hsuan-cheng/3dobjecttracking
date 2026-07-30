@@ -5,7 +5,7 @@
 # Run this script from the m3t_ros2 package directory.
 #
 # Usage:
-#   ./download_ycb_obj.sh <ycb_object_id> [<ycb_object_id> ...]
+#   ./download_ycb_obj.sh <ycb_object_id_1> <ycb_object_id_2> ...
 #
 # Examples:
 #   ./download_ycb_obj.sh 002_master_chef_can
@@ -27,7 +27,7 @@ script_name="$(basename "$0")"
 usage() {
   cat <<EOF
 Usage:
-  ./${script_name} <ycb_object_id> [<ycb_object_id> ...]
+  ./${script_name} <ycb_object_id_1> <ycb_object_id_2> ...
 
 Arguments:
   ycb_object_id  One or more official YCB names
