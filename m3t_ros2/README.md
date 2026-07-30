@@ -112,12 +112,12 @@ Adding an object requires:
 
 M3T is a local pose tracker, so the initial pose must be reasonably close to the actual object pose.
 
-A [`download_obj.sh`](./download_obj.sh) script is provided for quick guidance.
+A [`download_ycb_obj.sh`](./download_ycb_obj.sh) script is provided for quick guidance.
 
 ```bash
 cd <workspace_dir>/src/.../m3t_ros2
-chmod +x download_obj.sh
-./download_obj.sh
+chmod +x download_ycb_obj.sh
+./download_ycb_obj.sh
 ```
 
 
