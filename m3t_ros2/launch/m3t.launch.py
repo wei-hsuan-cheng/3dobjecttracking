@@ -356,7 +356,7 @@ def generate_launch_description():
                 description="RViz mesh URI for a custom body",
             ),
             DeclareLaunchArgument(
-                "mesh_use_embedded_materials", default_value="false"
+                "mesh_use_embedded_materials", default_value="true"
             ),
             DeclareLaunchArgument("mesh_scale", default_value="1.0"),
             DeclareLaunchArgument(
