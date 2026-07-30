@@ -16,6 +16,7 @@
 #include <algorithm>
 #include <chrono>
 #include <cmath>
+#include <cstdint>
 #include <memory>
 #include <random>
 #include <stdexcept>
@@ -218,7 +219,6 @@ class SyntheticSourceNode : public rclcpp::Node {
     pub_depth_info_ =
         create_publisher<sensor_msgs::msg::CameraInfo>(depth_info_topic, qos);
     SetUpRenderer();
-    WarnIfLoopIsDiscontinuous();
     color_info_ = MakeCameraInfo(intrinsics_, camera_frame_);
     depth_info_ = MakeCameraInfo(intrinsics_, camera_frame_);
 
@@ -264,38 +264,6 @@ class SyntheticSourceNode : public rclcpp::Node {
           parameter_name + " must contain finite values");
     }
     return result;
-  }
-
-  void WarnIfLoopIsDiscontinuous() const {
-    if (!loop_ || motion_mode_ != "six_dof_sine") return;
-
-    const double sequence_duration =
-        static_cast<double>(n_frames_) / publish_rate_;
-    const auto check_frequencies =
-        [this, sequence_duration](const Eigen::Vector3f &amplitude,
-                                  const Eigen::Vector3f &frequency,
-                                  const char *group) {
-          static constexpr const char *kAxisNames[] = {"x", "y", "z"};
-          for (int axis = 0; axis < 3; ++axis) {
-            if (std::abs(amplitude[axis]) <= 1.0e-8f ||
-                frequency[axis] <= 0.0f) {
-              continue;
-            }
-            const double cycles =
-                static_cast<double>(frequency[axis]) * sequence_duration;
-            if (std::abs(cycles - std::round(cycles)) > 1.0e-5) {
-              RCLCPP_WARN(
-                  get_logger(),
-                  "%s %s-axis sine completes %.6f cycles in %.6f s; "
-                  "loop reset will cause a pose jump",
-                  group, kAxisNames[axis], cycles, sequence_duration);
-            }
-          }
-        };
-    check_frequencies(translation_sine_amplitude_m_,
-                      translation_sine_frequency_hz_, "translation");
-    check_frequencies(rotation_sine_amplitude_rad_,
-                      rotation_sine_frequency_hz_, "rotation");
   }
 
   void SetUpRenderer() {
@@ -379,14 +347,18 @@ class SyntheticSourceNode : public rclcpp::Node {
                 diagonal, viewing_distance_);
   }
 
-  m3t::Transform3fA OrbitPoseForFrame(int frame) const {
-    const float phase =
-        2.0f * kPi * static_cast<float>(frame) /
-        static_cast<float>(n_frames_);
+  m3t::Transform3fA OrbitPoseForFrame(std::uint64_t frame) const {
+    const double phase =
+        2.0 * static_cast<double>(kPi) * static_cast<double>(frame) /
+        static_cast<double>(n_frames_);
     const float spin =
-        phase * static_cast<float>(spin_turns_);
+        static_cast<float>(std::remainder(
+            phase * spin_turns_, 2.0 * static_cast<double>(kPi)));
     const float nod =
-        static_cast<float>(nod_degrees_) * kPi / 180.0f * std::sin(phase);
+        static_cast<float>(nod_degrees_) * kPi / 180.0f *
+        static_cast<float>(std::sin(phase));
+    const float sin_phase = static_cast<float>(std::sin(phase));
+    const float cos_phase = static_cast<float>(std::cos(phase));
     const Eigen::Matrix3f motion_rotation =
         (Eigen::AngleAxisf(nod, Eigen::Vector3f::UnitX()) *
          Eigen::AngleAxisf(spin, Eigen::Vector3f::UnitZ()))
@@ -394,9 +366,9 @@ class SyntheticSourceNode : public rclcpp::Node {
     const Eigen::Vector3f initial_center =
         gt_initial_pose_ * mesh_center_in_body_;
     const Eigen::Vector3f translation_offset{
-        translation_amplitude_.x() * std::sin(phase),
-        translation_amplitude_.y() * (std::cos(phase) - 1.0f),
-        translation_amplitude_.z() * std::sin(phase)};
+        translation_amplitude_.x() * sin_phase,
+        translation_amplitude_.y() * (cos_phase - 1.0f),
+        translation_amplitude_.z() * sin_phase};
 
     m3t::Transform3fA pose{m3t::Transform3fA::Identity()};
     pose.linear() = gt_initial_pose_.rotation() * motion_rotation;
@@ -406,27 +378,33 @@ class SyntheticSourceNode : public rclcpp::Node {
     return pose;
   }
 
-  m3t::Transform3fA SixDofSinePoseForFrame(int frame) const {
-    const float time =
-        static_cast<float>(frame) / static_cast<float>(publish_rate_);
+  m3t::Transform3fA SixDofSinePoseForFrame(std::uint64_t frame) const {
+    const double time =
+        static_cast<double>(frame) / publish_rate_;
     Eigen::Vector3f translation_offset = Eigen::Vector3f::Zero();
     Eigen::Vector3f rpy = Eigen::Vector3f::Zero();
     for (int axis = 0; axis < 3; ++axis) {
-      const float translation_argument =
-          2.0f * kPi * translation_sine_frequency_hz_[axis] * time +
-          translation_sine_phase_rad_[axis];
+      const double translation_argument =
+          2.0 * static_cast<double>(kPi) *
+              static_cast<double>(translation_sine_frequency_hz_[axis]) *
+              time +
+          static_cast<double>(translation_sine_phase_rad_[axis]);
       translation_offset[axis] =
           translation_sine_amplitude_m_[axis] *
-          (std::sin(translation_argument) -
-           std::sin(translation_sine_phase_rad_[axis]));
+          static_cast<float>(
+              std::sin(translation_argument) -
+              std::sin(
+                  static_cast<double>(translation_sine_phase_rad_[axis])));
 
-      const float rotation_argument =
-          2.0f * kPi * rotation_sine_frequency_hz_[axis] * time +
-          rotation_sine_phase_rad_[axis];
+      const double rotation_argument =
+          2.0 * static_cast<double>(kPi) *
+              static_cast<double>(rotation_sine_frequency_hz_[axis]) * time +
+          static_cast<double>(rotation_sine_phase_rad_[axis]);
       rpy[axis] =
           rotation_sine_amplitude_rad_[axis] *
-          (std::sin(rotation_argument) -
-           std::sin(rotation_sine_phase_rad_[axis]));
+          static_cast<float>(
+              std::sin(rotation_argument) -
+              std::sin(static_cast<double>(rotation_sine_phase_rad_[axis])));
     }
 
     if (translation_frame_ == "body") {
@@ -460,7 +438,7 @@ class SyntheticSourceNode : public rclcpp::Node {
     return pose;
   }
 
-  m3t::Transform3fA PoseForFrame(int frame) const {
+  m3t::Transform3fA PoseForFrame(std::uint64_t frame) const {
     if (motion_mode_ == "static") return gt_initial_pose_;
     if (motion_mode_ == "six_dof_sine") {
       return SixDofSinePoseForFrame(frame);
@@ -469,14 +447,11 @@ class SyntheticSourceNode : public rclcpp::Node {
   }
 
   void PublishFrame() {
-    if (frame_index_ >= n_frames_) {
-      if (loop_) {
-        frame_index_ = 0;
-      } else {
-        timer_->cancel();
-        RCLCPP_INFO(get_logger(), "synthetic sequence complete");
-        return;
-      }
+    if (!loop_ &&
+        frame_index_ >= static_cast<std::uint64_t>(n_frames_)) {
+      timer_->cancel();
+      RCLCPP_INFO(get_logger(), "synthetic sequence complete");
+      return;
     }
 
     const m3t::Transform3fA pose = PoseForFrame(frame_index_);
@@ -486,7 +461,9 @@ class SyntheticSourceNode : public rclcpp::Node {
         (textured_renderer_ &&
          (!textured_renderer_->StartRendering() ||
           !textured_renderer_->FetchColorImage()))) {
-      RCLCPP_ERROR(get_logger(), "rendering failed at frame %d", frame_index_);
+      RCLCPP_ERROR(
+          get_logger(), "rendering failed at frame %llu",
+          static_cast<unsigned long long>(frame_index_));
       return;
     }
 
@@ -570,7 +547,7 @@ class SyntheticSourceNode : public rclcpp::Node {
   bool mesh_embedded_{false};
   bool has_gt_initial_pose_{false};
   bool has_translation_amplitude_{false};
-  int frame_index_{0};
+  std::uint64_t frame_index_{0};
 
   m3t::Intrinsics intrinsics_{};
   Eigen::Vector3f mesh_center_{Eigen::Vector3f::Zero()};
