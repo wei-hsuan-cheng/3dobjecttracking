@@ -39,19 +39,23 @@ m3t_synthetic_source:
 
     motion_mode: six_dof_sine # six_dof_sine | orbit | static
 
-    # Independent x/y/z sinusoids. Position units are meters, frequency is Hz,
-    # and phase is degrees. The frame-zero offset is always zero, so
-    # gt_initial_pose remains the exact pose at frame 0.
-    translation_amplitude_m: [0.05, 0.04, 0.03]
-    translation_frequency_hz: [0.25, 0.50, 0.75]
-    translation_phase_deg: [0.0, 0.0, 0.0]
-
+    # Independent x/y/z sinusoids. 
     # Independent roll/pitch/yaw sinusoids using ZYX composition.
+
+    # Fast motion
+    # translation_amplitude_m: [0.05, 0.04, 0.03]
+    # translation_frequency_hz: [0.25, 0.50, 0.75]
+    # translation_phase_deg: [0.0, 0.0, 0.0]
     # rotation_amplitude_deg: [15.0, 20.0, 30.0]
     # rotation_frequency_hz: [0.25, 0.50, 0.75]
     # rotation_phase_deg: [0.0, 0.0, 0.0]
+    
+    # Slow motion
+    translation_amplitude_m: [0.05, 0.04, 0.03]
+    translation_frequency_hz: [0.1, 0.2, 0.25]
+    translation_phase_deg: [0.0, 0.0, 0.0]
     rotation_amplitude_deg: [30.0, 30.0, 60.0]
-    rotation_frequency_hz: [0.3, 0.3, 0.1]
+    rotation_frequency_hz: [0.1, 0.1, 0.1]
     rotation_phase_deg: [60.0, 0.0, 90.0]
 
     # Translation can be expressed in the initial world or body axes.

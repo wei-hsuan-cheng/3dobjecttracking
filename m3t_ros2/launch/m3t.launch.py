@@ -384,7 +384,7 @@ def generate_launch_description():
                 default_value="gt",
                 description="gt, tf, or static",
             ),
-            DeclareLaunchArgument("source_rate", default_value="30.0"),
+            DeclareLaunchArgument("source_rate", default_value="60.0"),
             DeclareLaunchArgument("track_rate", default_value="0.0"),
             DeclareLaunchArgument("publish_rate", default_value="60.0"),
             DeclareLaunchArgument("log_period", default_value="2.0"),
