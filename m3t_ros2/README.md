@@ -117,7 +117,7 @@ A [`download_ycb_obj.sh`](./download_ycb_obj.sh) script is provided for quick gu
 ```bash
 cd <workspace_dir>/src/.../m3t_ros2
 chmod +x download_ycb_obj.sh
-./download_ycb_obj.sh
+./download_ycb_obj.sh 003_cracker_box
 ```
 
 
