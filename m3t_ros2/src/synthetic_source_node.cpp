@@ -106,10 +106,10 @@ class SyntheticSourceNode : public rclcpp::Node {
     mesh_resource_ =
         declare_parameter<std::string>("mesh_resource", std::string{});
     mesh_scale_ = declare_parameter<double>("mesh_scale", 1.0);
-    mesh_embedded_ =
-        declare_parameter<bool>("mesh_use_embedded_materials", false);
     texture_path_ =
         declare_parameter<std::string>("texture_path", std::string{});
+    mesh_embedded_ = declare_parameter<bool>(
+        "mesh_use_embedded_materials", !texture_path_.empty());
     const auto camera_intrinsics =
         declare_parameter<std::vector<double>>(
             "camera_intrinsics",
@@ -229,6 +229,7 @@ class SyntheticSourceNode : public rclcpp::Node {
     gt_config.marker_topic = gt_marker_topic;
     gt_config.mesh_resource = mesh_resource_;
     gt_config.mesh_scale = static_cast<float>(mesh_scale_);
+    gt_config.mesh_use_embedded_materials = mesh_embedded_;
     gt_config.publish_rate = gt_publish_rate_;
     gt_config.geometry2body_pose = body_->geometry2body_pose();
     gt_publisher_ =

@@ -120,7 +120,19 @@ def _resolve_object(context):
     default_modalities = str(
         parameters.get("modalities", "region,depth")
     )
-    embedded = _bool(context, "mesh_use_embedded_materials")
+    embedded_mode = _value(
+        context, "mesh_use_embedded_materials"
+    ).strip().lower()
+    if embedded_mode == "auto":
+        embedded = bool(texture_path)
+    elif embedded_mode in ("1", "true", "yes", "on"):
+        embedded = True
+    elif embedded_mode in ("0", "false", "no", "off"):
+        embedded = False
+    else:
+        raise RuntimeError(
+            "mesh_use_embedded_materials must be auto, true, or false"
+        )
     return (
         object_name,
         object_config,
@@ -356,7 +368,12 @@ def generate_launch_description():
                 description="RViz mesh URI for a custom body",
             ),
             DeclareLaunchArgument(
-                "mesh_use_embedded_materials", default_value="true"
+                "mesh_use_embedded_materials",
+                default_value="auto",
+                description=(
+                    "auto uses OBJ/MTL materials when texture_path is set; "
+                    "true or false forces the behavior"
+                ),
             ),
             DeclareLaunchArgument("mesh_scale", default_value="1.0"),
             DeclareLaunchArgument(

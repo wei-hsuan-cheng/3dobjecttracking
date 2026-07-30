@@ -31,6 +31,7 @@ struct GroundTruthPublisherConfig {
   std::string marker_topic{"/m3t/marker_gt"};
   std::string mesh_resource;
   float mesh_scale{1.0f};
+  bool mesh_use_embedded_materials{false};
   double publish_rate{60.0};
   m3t::Transform3fA geometry2body_pose{m3t::Transform3fA::Identity()};
 };
@@ -168,14 +169,20 @@ class GroundTruthPublisher {
     marker.type = visualization_msgs::msg::Marker::MESH_RESOURCE;
     marker.action = visualization_msgs::msg::Marker::ADD;
     marker.mesh_resource = config_.mesh_resource;
-    marker.mesh_use_embedded_materials = false;
+    marker.mesh_use_embedded_materials =
+        config_.mesh_use_embedded_materials;
     marker.pose =
         ToPose(body2world_pose * config_.geometry2body_pose);
     marker.scale.x = marker.scale.y = marker.scale.z = config_.mesh_scale;
-    marker.color.r = 0.55f;
-    marker.color.g = 0.55f;
-    marker.color.b = 0.55f;
-    marker.color.a = 0.7f;
+    if (config_.mesh_use_embedded_materials) {
+      // All-zero color asks RViz to preserve the OBJ/MTL appearance.
+      marker.color.r = marker.color.g = marker.color.b = marker.color.a = 0.0f;
+    } else {
+      marker.color.r = 0.55f;
+      marker.color.g = 0.55f;
+      marker.color.b = 0.55f;
+      marker.color.a = 0.7f;
+    }
     marker_publisher_->publish(marker);
   }
 

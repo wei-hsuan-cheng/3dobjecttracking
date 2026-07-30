@@ -491,8 +491,8 @@ class M3TTrackerNode final : public rclcpp::Node {
           response->message = "re-detect queued";
         });
 
-    ros_publisher_ =
-        std::make_unique<m3t_ros2::RosPublisher>(this, publisher_config_);
+    ros_publisher_ = std::make_unique<m3t_ros2::RosPublisher>(
+        this, publisher_config_, body_);
   }
 
   void OnColorImage(sensor_msgs::msg::Image::ConstSharedPtr message) {

@@ -99,8 +99,10 @@ class ImagePublisherNode : public rclcpp::Node {
     mesh_resource_ =
         declare_parameter<std::string>("mesh_resource", std::string{});
     mesh_scale_ = declare_parameter<double>("mesh_scale", 1.0);
-    mesh_embedded_ =
-        declare_parameter<bool>("mesh_use_embedded_materials", false);
+    const auto texture_path =
+        declare_parameter<std::string>("texture_path", std::string{});
+    mesh_embedded_ = declare_parameter<bool>(
+        "mesh_use_embedded_materials", !texture_path.empty());
     const auto intrinsics = declare_parameter<std::vector<double>>(
         "camera_intrinsics",
         {698.128, 698.617, 478.459, 274.426, 960.0, 540.0});
@@ -156,6 +158,7 @@ class ImagePublisherNode : public rclcpp::Node {
       gt_config.marker_topic = gt_marker_topic;
       gt_config.mesh_resource = mesh_resource_;
       gt_config.mesh_scale = static_cast<float>(mesh_scale_);
+      gt_config.mesh_use_embedded_materials = mesh_embedded_;
       gt_config.publish_rate = gt_publish_rate_;
       gt_config.geometry2body_pose = body_->geometry2body_pose();
       gt_publisher_ =
