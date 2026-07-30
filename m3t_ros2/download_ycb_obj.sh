@@ -146,8 +146,8 @@ EOF
     body_id: 3
     region_id: 3
     # [x, y, z, roll, pitch, yaw], with angles in radians.
-    initial_pose: [0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
-    gt_initial_pose: [0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+    initial_pose: [0.0, 0.0, 0.5, 0.0, 0.0, 0.0]
+    gt_initial_pose: [0.0, 0.0, 0.5, 0.0, 0.0, 0.0]
     translation_amplitude: [0.0, 0.0, 0.0]
 EOF
 
