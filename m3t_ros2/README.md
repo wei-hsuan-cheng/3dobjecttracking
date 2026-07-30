@@ -112,13 +112,21 @@ Adding an object requires:
 
 M3T is a local pose tracker, so the initial pose must be reasonably close to the actual object pose.
 
-A [`download_ycb_obj.sh`](./download_ycb_obj.sh) script is provided for quick guidance.
+A [`download_ycb_obj.sh`](./download_ycb_obj.sh) script to download multiple objects in YCB dataset is provided for quick guidance.
 
 ```bash
 cd <workspace_dir>/src/.../m3t_ros2
 chmod +x download_ycb_obj.sh
-./download_ycb_obj.sh 003_cracker_box
+
+./download_ycb_obj.sh \
+  002_master_chef_can \
+  003_cracker_box \
+  004_sugar_box \
+  005_tomato_soup_can \
+  006_mustard_bottle
 ```
+
+The script automatically download the object mesh and create the YAML file.
 
 
 ### 1. Prepare the mesh
