@@ -14,7 +14,7 @@ m3t_tracker_node:
     convergence_required_rounds: 2
     # Tracker remains at normal nice=0; publisher is deliberately lower.
     publisher_thread_nice: 5
-    image_outputs: "none"
+    image_outputs: "overlay,keypoints"
     sync_tolerance: 0.02
     depth_scale: 0.001
     lost_threshold: 0.05
