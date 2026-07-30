@@ -37,16 +37,6 @@ m3t_synthetic_source:
     distortion: 0.005
     depth_scale: 0.001
 
-    # Optional exact row-major body-to-camera pose at frame zero. When omitted,
-    # the node centers the mesh and automatically selects a viewing distance.
-    # gt_initial_pose: [
-    #   1.0, 0.0, 0.0, 0.0,
-    #   0.0, 1.0, 0.0, 0.0,
-    #   0.0, 0.0, 1.0, 0.60,
-    #   0.0, 0.0, 0.0, 1.0
-    # ]
-
-    # 
     motion_mode: six_dof_sine # six_dof_sine | orbit | static
 
     # Independent x/y/z sinusoids. Position units are meters, frequency is Hz,

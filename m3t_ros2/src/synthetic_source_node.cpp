@@ -159,20 +159,9 @@ class SyntheticSourceNode : public rclcpp::Node {
           "rotation_pivot must be geometry_center or body_origin");
     }
     if (!gt_initial_pose_values.empty()) {
-      gt_initial_pose_ = m3t_ros2::TransformFromRowMajor(
-          gt_initial_pose_values, "gt_initial_pose");
-      const Eigen::Matrix3f rotation = gt_initial_pose_.rotation();
-      const Eigen::RowVector4f homogeneous_row =
-          gt_initial_pose_.matrix().row(3);
-      if (!gt_initial_pose_.matrix().allFinite() ||
-          (rotation.transpose() * rotation -
-           Eigen::Matrix3f::Identity()).norm() > 1.0e-4f ||
-          std::abs(rotation.determinant() - 1.0f) > 1.0e-4f ||
-          (homogeneous_row -
-           Eigen::RowVector4f{0.0f, 0.0f, 0.0f, 1.0f}).norm() > 1.0e-5f) {
-        throw std::runtime_error(
-            "gt_initial_pose must be a finite rigid 4x4 transform");
-      }
+      gt_initial_pose_ =
+          m3t_ros2::TransformFromPose(gt_initial_pose_values,
+                                      "gt_initial_pose");
       has_gt_initial_pose_ = true;
     }
     if (!translation_amplitude_values.empty()) {

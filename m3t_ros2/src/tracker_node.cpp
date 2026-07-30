@@ -265,8 +265,7 @@ class M3TTrackerNode final : public rclcpp::Node {
     const auto initial_pose_values =
         declare_parameter<std::vector<double>>(
             "initial_pose",
-            {1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0,
-             0.0, 0.0, 1.0, 0.5, 0.0, 0.0, 0.0, 1.0});
+            {0.0, 0.0, 0.5, 0.0, 0.0, 0.0});
     const auto rotation_symmetry_values =
         declare_parameter<std::vector<double>>(
             "rotation_symmetries", std::vector<double>{});
@@ -346,8 +345,9 @@ class M3TTrackerNode final : public rclcpp::Node {
 
     sync_tolerance_ns_ =
         static_cast<int64_t>(sync_tolerance * 1.0e9);
-    initial_pose_ = m3t_ros2::TransformFromRowMajor(
-        initial_pose_values, "initial_pose");
+    initial_pose_ =
+        m3t_ros2::TransformFromPose(initial_pose_values, "initial_pose");
+    detector_initial_pose_ = initial_pose_;
     rotation_symmetries_ =
         ParseRotationSymmetries(rotation_symmetry_values);
 
@@ -763,10 +763,16 @@ class M3TTrackerNode final : public rclcpp::Node {
     }
 
     if (use_gt_initial_pose_) {
-      m3t::Transform3fA ground_truth;
-      if (LookupGroundTruth(&ground_truth)) {
-        detector_->set_link2world_pose(ground_truth);
+      if (!LookupGroundTruth(&detector_initial_pose_)) {
+        RCLCPP_FATAL(
+            get_logger(),
+            "ground-truth TF disappeared before one-time initialization");
+        running_.store(false, std::memory_order_release);
+        publisher_cv_.notify_all();
+        rclcpp::shutdown();
+        return;
       }
+      detector_->set_link2world_pose(detector_initial_pose_);
     }
     tracker_->ExecuteDetection(false);
 
@@ -810,10 +816,9 @@ class M3TTrackerNode final : public rclcpp::Node {
          ++iteration) {
       if (redetect_requested_.exchange(
               false, std::memory_order_acq_rel)) {
-        m3t::Transform3fA ground_truth;
-        if (LookupGroundTruth(&ground_truth)) {
-          detector_->set_link2world_pose(ground_truth);
-        }
+        // Reuse the startup detector pose. In GT initialization mode, live GT
+        // must never be fed back into the estimate after initialization.
+        detector_->set_link2world_pose(detector_initial_pose_);
         tracker_->ExecuteDetection(false);
       }
       if (event_driven_ && !WaitForNewFrame(last_sequence)) break;
@@ -1029,6 +1034,8 @@ class M3TTrackerNode final : public rclcpp::Node {
   bool use_depth_{false};
   bool use_texture_{false};
   m3t::Transform3fA initial_pose_{m3t::Transform3fA::Identity()};
+  m3t::Transform3fA detector_initial_pose_{
+      m3t::Transform3fA::Identity()};
   std::vector<Eigen::Matrix3f> rotation_symmetries_;
   m3t_ros2::RosPublisherConfig publisher_config_;
 

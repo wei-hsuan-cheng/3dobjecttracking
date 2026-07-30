@@ -8,6 +8,9 @@
 
 #include <m3t/body.h>
 
+#include <Eigen/Geometry>
+
+#include <cmath>
 #include <filesystem>
 #include <memory>
 #include <stdexcept>
@@ -30,6 +33,64 @@ inline m3t::Transform3fA TransformFromRowMajor(
     }
   }
   return m3t::Transform3fA{matrix};
+}
+
+inline m3t::Transform3fA TransformFromPose(
+    const std::vector<double> &values, const std::string &parameter_name) {
+  if (values.size() != 6 && values.size() != 7) {
+    throw std::runtime_error(
+        parameter_name +
+        " must be [x, y, z, roll, pitch, yaw] (radians) or "
+        "[x, y, z, qx, qy, qz, qw]");
+  }
+  for (const double value : values) {
+    if (!std::isfinite(value)) {
+      throw std::runtime_error(parameter_name +
+                               " must contain only finite values");
+    }
+  }
+
+  m3t::Transform3fA transform{m3t::Transform3fA::Identity()};
+  transform.translation() =
+      Eigen::Vector3f{static_cast<float>(values[0]),
+                      static_cast<float>(values[1]),
+                      static_cast<float>(values[2])};
+  if (!transform.translation().allFinite()) {
+    throw std::runtime_error(parameter_name +
+                             " translation is outside float range");
+  }
+
+  if (values.size() == 6) {
+    const float roll = static_cast<float>(values[3]);
+    const float pitch = static_cast<float>(values[4]);
+    const float yaw = static_cast<float>(values[5]);
+    if (!std::isfinite(roll) || !std::isfinite(pitch) ||
+        !std::isfinite(yaw)) {
+      throw std::runtime_error(parameter_name +
+                               " RPY angles are outside float range");
+    }
+    transform.linear() =
+        (Eigen::AngleAxisf(yaw, Eigen::Vector3f::UnitZ()) *
+         Eigen::AngleAxisf(pitch, Eigen::Vector3f::UnitY()) *
+         Eigen::AngleAxisf(roll, Eigen::Vector3f::UnitX()))
+            .toRotationMatrix();
+    return transform;
+  }
+
+  Eigen::Quaternionf quaternion{
+      static_cast<float>(values[6]), static_cast<float>(values[3]),
+      static_cast<float>(values[4]), static_cast<float>(values[5])};
+  if (!quaternion.coeffs().allFinite()) {
+    throw std::runtime_error(parameter_name +
+                             " quaternion is outside float range");
+  }
+  if (quaternion.squaredNorm() <= 1.0e-12f) {
+    throw std::runtime_error(parameter_name +
+                             " quaternion must have non-zero norm");
+  }
+  quaternion.normalize();
+  transform.linear() = quaternion.toRotationMatrix();
+  return transform;
 }
 
 inline std::shared_ptr<m3t::Body> DeclareAndCreateBody(
