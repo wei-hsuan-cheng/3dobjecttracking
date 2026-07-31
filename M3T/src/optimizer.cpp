@@ -162,8 +162,8 @@ bool Optimizer::CalculateOptimization(int iteration, int corr_iteration,
   Eigen::LDLT<Eigen::MatrixXf, Eigen::Lower> ldlt{a};
   Eigen::VectorXf theta{ldlt.solve(b)};
 
-  if (theta.array().isNaN().isZero()) return UpdatePoses(theta);
-  return true;
+  if (!theta.allFinite()) return false;
+  return UpdatePoses(theta);
 }
 
 std::vector<std::shared_ptr<Link>> Optimizer::ReferencedLinks() {

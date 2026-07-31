@@ -7,9 +7,14 @@ project(M3T)
 
 # Options
 # =============================================================================
-option(USE_AZURE_KINECT "Use Azure Kinect" ON)
-option(USE_REALSENSE "Use RealSense D435" ON)
-option(USE_GTEST "Use gtest" ON)
+# Defaults OFF so `colcon build` works out of the box on machines without the
+# Azure Kinect / RealSense SDKs or gtest. Enable explicitly if available.
+option(BUILD_TESTING "Build tests" OFF)
+option(USE_AZURE_KINECT "Use Azure Kinect" OFF)
+option(USE_REALSENSE "Use RealSense D435" OFF)
+option(USE_GTEST "Use gtest" ${BUILD_TESTING})
+option(M3T_BUILD_EXAMPLES "Build M3T example executables" OFF)
+option(M3T_BUILD_DOCUMENTATION "Build Doxygen documentation" OFF)
 
 
 # Libraries
@@ -33,7 +38,7 @@ if (UNIX)
 endif ()
 find_package(OpenGL REQUIRED)
 find_package(glfw3 3.1.2 REQUIRED)
-find_package(OpenCV 4.3.0 REQUIRED COMPONENTS core imgproc highgui imgcodecs calib3d features2d xfeatures2d OPTIONAL_COMPONENTS cudafeatures2d)
+find_package(OpenCV 4.3.0 REQUIRED COMPONENTS core imgproc highgui imgcodecs calib3d features2d OPTIONAL_COMPONENTS xfeatures2d cudafeatures2d)
 
 if (USE_AZURE_KINECT)
     find_package(k4a 1.3.0 REQUIRED)
@@ -125,6 +130,9 @@ endif ()
 if(OpenCV_CUDA_VERSION)
     add_definitions( -DUSE_CUDA=TRUE )
 endif ()
+if(TARGET opencv_xfeatures2d)
+    add_definitions( -DUSE_XFEATURES2D=TRUE )
+endif ()
 if (USE_GTEST)
     add_definitions( -DUSE_GTEST=TRUE )
 endif ()
@@ -133,6 +141,27 @@ endif ()
 # Directories
 # =============================================================================
 add_subdirectory(src)
-add_subdirectory(test)
-add_subdirectory(examples)
-add_subdirectory(doc)
+if (USE_GTEST)
+    add_subdirectory(test)
+endif ()
+if (M3T_BUILD_EXAMPLES)
+    add_subdirectory(examples)
+endif ()
+if (M3T_BUILD_DOCUMENTATION)
+    add_subdirectory(doc)
+endif ()
+
+
+# Colcon / ROS package resources
+# =============================================================================
+#
+# M3T remains a plain CMake library, but colcon discovers it through package.xml.
+# Install the package marker so downstream ROS packages can resolve this
+# colcon-built library through the ament index. Runtime-generated models must
+# not be written here.
+file(WRITE "${CMAKE_CURRENT_BINARY_DIR}/m3t_package_marker" "")
+install(
+    FILES "${CMAKE_CURRENT_BINARY_DIR}/m3t_package_marker"
+    DESTINATION share/ament_index/resource_index/packages
+    RENAME m3t)
+install(FILES package.xml DESTINATION share/m3t)

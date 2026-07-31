@@ -4,6 +4,8 @@
 
 #include <m3t/texture_modality.h>
 
+#include <algorithm>
+
 namespace m3t {
 
 TextureModality::TextureModality(
@@ -460,8 +462,12 @@ bool TextureModality::CalculateResults(int iteration) {
   Eigen::Vector3f orientation{
       body2camera_pose_.rotation().inverse() *
       body2camera_pose_.translation().matrix().normalized()};
-  float rotation_difference =
-      acos(orientation.transpose() * orientation_last_keyframe_);
+  if (!orientation.allFinite() || !orientation_last_keyframe_.allFinite())
+    return false;
+  const float orientation_dot =
+      orientation.dot(orientation_last_keyframe_);
+  const float rotation_difference =
+      std::acos(std::clamp(orientation_dot, -1.0f, 1.0f));
   keyframe_age_++;
 
   // Compute new data if difference is above threshold
@@ -748,20 +754,36 @@ void TextureModality::SetUpFeatureDetectorAndMatcher() {
     case DescriptorType::DAISY:
       feature_detector_ =
           cv::ORB::create(orb_n_features_, orb_scale_factor_, orb_n_levels_);
+#ifdef USE_XFEATURES2D
       feature_descriptor_ = cv::xfeatures2d::DAISY::create(
           daisy_radius_, daisy_q_radius_, daisy_q_theta_, daisy_q_hist_);
+#else
+      std::cerr << "DAISY descriptor requires OpenCV xfeatures2d, which is not "
+                   "available. Falling back to ORB descriptor." << std::endl;
+      feature_descriptor_ =
+          cv::ORB::create(orb_n_features_, orb_scale_factor_, orb_n_levels_);
+#endif
       break;
     case DescriptorType::FREAK:
       feature_detector_ =
           cv::ORB::create(orb_n_features_, orb_scale_factor_, orb_n_levels_);
+#ifdef USE_XFEATURES2D
       feature_descriptor_ = cv::xfeatures2d::FREAK::create(
           freak_orientation_normalized_, freak_scale_normalized_,
           freak_pattern_scale_, freak_n_octaves_);
+#else
+      std::cerr << "FREAK descriptor requires OpenCV xfeatures2d, which is not "
+                   "available. Falling back to ORB descriptor." << std::endl;
+      feature_descriptor_ =
+          cv::ORB::create(orb_n_features_, orb_scale_factor_, orb_n_levels_);
+#endif
       break;
     case DescriptorType::SIFT:
       // Look in both namespaces for SIFT
       using namespace cv;
+#ifdef USE_XFEATURES2D
       using namespace cv::xfeatures2d;
+#endif
       feature_detector_ = SIFT::create(sift_n_features_, sift_n_octave_layers_,
                                        sift_contrast_threshold_,
                                        sift_edge_threshold_, sift_sigma_);

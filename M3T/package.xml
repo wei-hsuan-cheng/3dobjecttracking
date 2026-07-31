@@ -1,0 +1,23 @@
+<?xml version="1.0"?>
+<package format="3">
+  <name>m3t</name>
+  <version>1.0.0</version>
+  <description>
+    M3T: A Multi-body Multi-modality Multi-camera 3D Tracker (library).
+    Built as a plain CMake package so colcon can build it as a dependency of
+    ROS 2 packages (e.g. m3t_ros2) via --packages-up-to.
+  </description>
+  <maintainer email="noreply@example.com">m3t</maintainer>
+  <license>MIT</license>
+
+  <buildtool_depend>cmake</buildtool_depend>
+
+  <depend>libeigen3-dev</depend>
+  <depend>libglew-dev</depend>
+  <depend>libglfw3-dev</depend>
+  <depend>libopencv-dev</depend>
+
+  <export>
+    <build_type>cmake</build_type>
+  </export>
+</package>

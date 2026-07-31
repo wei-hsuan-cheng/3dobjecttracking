@@ -185,7 +185,8 @@ bool Renderer::set_up() const { return set_up_; };
 
 const std::vector<std::shared_ptr<Body>> &Renderer::referenced_body_ptrs()
     const {
-  return {};
+  static const std::vector<std::shared_ptr<Body>> empty_body_ptrs;
+  return empty_body_ptrs;
 }
 
 Renderer::Renderer(
